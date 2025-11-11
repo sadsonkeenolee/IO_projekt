@@ -23,14 +23,16 @@ var stateTable = map[ServiceState]string{
 }
 
 type IService interface {
-	Start()
-	Stop()
+	Start() error
+	Stop() error
+	ReadConfig() error
 }
 
 // Base for any `Service`.
 type Service struct {
-	Router *gin.Engine
-	DB     *sql.DB
-	Logger log.Logger
-	State  ServiceState
+	Router  *gin.Engine
+	DB      *sql.DB
+	Logger  *log.Logger
+	State   ServiceState
+	BaseUrl string
 }
