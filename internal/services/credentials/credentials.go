@@ -1,4 +1,4 @@
-// Package `credentials` implements the login and register logic for this
+// Package `credentials` implements the login and register logic for the
 // service.
 package credentials
 
@@ -10,6 +10,7 @@ import (
 	"os"
 
 	_ "github.com/go-sql-driver/mysql"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -20,18 +21,14 @@ import (
 	"github.com/sadsonkeenolee/IO_projekt/internal/services"
 )
 
-type UserRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
 type Credentials struct {
 	services.Service
 }
 
+// NewCredentials creates Service from configuration file.
 func NewCredentials() (services.IService, error) {
-	l := log.New(os.Stdout, "Credentials: ", log.LstdFlags)
 	c := Credentials{}
+	l := log.New(os.Stdout, "Credentials: ", log.LstdFlags)
 	c.Logger = l
 	if err := c.ReadConfig(); err != nil {
 		c.Logger.Printf("Error: %v.\n", err)
@@ -43,23 +40,19 @@ func NewCredentials() (services.IService, error) {
 	return &c, nil
 }
 
-// The method `Start` makes the service public, allowing for incoming
-// connections.
 func (c *Credentials) Start() error {
-	// Always define groups here.
+	// v1 of api.
 	{
 		v1 := c.Router.Group("/v1")
-		v1.POST(fmt.Sprintf("%v%v", c.BaseUrl, "login/"), c.UserLogin)
-		v1.POST(fmt.Sprintf("%v%v", c.BaseUrl, "register/"), c.UserRegister)
+		v1.POST("auth/login", c.OnUserLogin)
+		v1.POST("auth/register", c.OnUserRegister)
 	}
 	c.Router.Run(":9999")
 	return nil
 }
+
 func (c *Credentials) Stop() error { panic("Stop not implemented") }
 
-// The method `ReadConfig` reads config and applies it to the current
-// configuration of the service. The path to the config filename
-// should be present in the environment variables.
 func (c *Credentials) ReadConfig() error {
 	viper.SetConfigName("CredentialService")
 	viper.AddConfigPath(os.Getenv("CREDENTIALS_CONFIG_DIR_PATH"))
@@ -70,39 +63,147 @@ func (c *Credentials) ReadConfig() error {
 	}
 
 	dbName := viper.Get("DatabaseConfig.name").(string)
-	// WARNING: Nieuzywane na razie
-	// port := config.Get("DatabaseConfig.port").(string)
 	username := viper.Get("DatabaseConfig.username").(string)
 	password := viper.Get("DatabaseConfig.password").(string)
+	port := viper.Get("DatabaseConfig.port").(string)
+	sqlInfo := fmt.Sprintf("%v:%v@tcp(localhost:%v)/%v",
+		username, password, port, dbName)
 
-	db, err := sql.Open("mysql", fmt.Sprintf("%v:%v@/%v", username, password, dbName))
+	db, err := sql.Open("mysql", sqlInfo)
 	if err != nil {
 		return err
 	}
 
 	c.DB = db
-	c.BaseUrl = viper.Get("RouterConfig.base_url").(string)
 	c.Router = gin.Default()
 	return nil
 }
 
-func (c *Credentials) UserLogin(ctx *gin.Context) {
-	var ur UserRequest
-	if err := ctx.ShouldBindJSON(&ur); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+// validateUser extracts password from database and checks if the user exists.
+// Then two password are compared to each other - if success, nil is returned.
+func (c *Credentials) validateUser(userFetched *sql.Row, password string) error {
+	var hashedPassword []byte
+	if err := userFetched.Scan(&hashedPassword); err != nil {
+		return fmt.Errorf("user doesn't exist")
 	}
-
-	// ping pong
-	ctx.JSON(http.StatusOK, ur)
+	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(password)); err != nil {
+		return fmt.Errorf("user credentials don't match")
+	}
+	return nil
 }
-func (c *Credentials) UserRegister(ctx *gin.Context) {
-	var ur UserRequest
-	if err := ctx.ShouldBindJSON(&ur); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+
+// OnUserLogin implements logic for logging.
+func (c *Credentials) OnUserLogin(ctx *gin.Context) {
+	var u services.UserLoginRequest
+	if err := ctx.ShouldBindJSON(&u); err != nil {
+		c.Logger.Println(err)
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     err.Error(),
+		})
 		return
 	}
 
-	// ping pong
-	ctx.JSON(http.StatusOK, ur)
+	userFetched := c.DB.QueryRow("SELECT password FROM user_credentials WHERE username=?", u.Username)
+	if err := c.validateUser(userFetched, u.Password); err != nil {
+		c.Logger.Println(err)
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     err.Error(),
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
+		AccessToken: "Not implemented",
+		TokenType:   "Not implemented",
+		ExpiresIn:   999,
+		Message:     "",
+	})
+}
+
+// OnUserRegister implements logic when user tries to register.
+func (c *Credentials) OnUserRegister(ctx *gin.Context) {
+	var u services.UserRegisterRequest
+	if err := ctx.ShouldBindJSON(&u); err != nil {
+		c.Logger.Println(err)
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "incorrect request.",
+		})
+		return
+	}
+
+	// Start a transaction to push full user credentials.
+	tx, err := c.DB.BeginTx(ctx, nil)
+	defer tx.Rollback()
+
+	if err != nil {
+		c.Logger.Println(err)
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "service has some troubles.",
+		})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), 10)
+	if err != nil {
+		c.Logger.Println(err)
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "service has some troubles.",
+		})
+		return
+	}
+
+	passwordStringified := string(hashedPassword)
+	res, err := tx.Exec(`INSERT INTO user_credentials(username, password, email) VALUES (?, ?, ?)`, u.Username, passwordStringified, u.Email)
+	if err != nil {
+		c.Logger.Println(err)
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "couldn't register you in.",
+		})
+		return
+	}
+
+	id, _ := res.LastInsertId()
+	_, err = tx.Exec(`INSERT INTO user_identity(ID, birthday, gender) VALUES (?, ?, ?)`, id, u.Birthday, u.Gender)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "couldn't register you in.",
+		})
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "couldn't register you in.",
+		})
+		return
+	}
+	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
+		AccessToken: "Not implemented",
+		TokenType:   "Not implemented",
+		ExpiresIn:   999,
+		Message:     "",
+	})
 }

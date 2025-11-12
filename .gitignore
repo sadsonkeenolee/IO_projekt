@@ -1,5 +1,4 @@
 # Go
 build/
 api/configs/*
-# Na razie nie wrzucac kluczy api
-!api/configs/*.toml
+!api/configs/README.md

@@ -1,8 +1,9 @@
 CREATE TABLE IF NOT EXISTS `user_credentials` (
-  `ID` bigint UNSIGNED NOT NULL AUTO_INCREMENT,
-  `username` char(64) NOT NULL,
-  `password` char(64) NOT NULL,
-  `email` char(128) NOT NULL,
+  `ID` bigint unsigned auto_increment,
+  `username` char(64) not null,
+  `password` char(64) not null,
+  `email` varchar(128) not null,
+  
   PRIMARY KEY (`ID`),
   UNIQUE KEY `credentials_unique` (`username`),
   UNIQUE KEY `credentials_unique_1` (`email`)
