@@ -8,18 +8,25 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/dgrijalva/jwt-go"
+	gsdmysql "github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 
-	// "github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4"
+	_ "github.com/golang-migrate/migrate/v4/database/mysql"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/github"
-	"github.com/sadsonkeenolee/IO_projekt/internal/services"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
+
+var SecretTokenKey = []byte("bardzo_tajny_token_nie_udostepniac")
 
 type Credentials struct {
 	services.Service
@@ -30,13 +37,41 @@ func NewCredentials() (services.IService, error) {
 	c := Credentials{}
 	l := log.New(os.Stdout, "Credentials: ", log.LstdFlags)
 	c.Logger = l
-	if err := c.ReadConfig(); err != nil {
+	c.Router = gin.Default()
+
+	v, err := c.SetConfig()
+	if err != nil {
+		c.Logger.Printf("Error: %v.\n", err)
+		c.Logger.Println("Service goes into `Idle mode`.")
+		c.Logger.Println("Please note the service configuration is incomplete.")
+		c.ConfigReader = nil
+		c.State = services.StateIdle
+		return &c, err
+	}
+	c.ConfigReader = v
+
+	var ci services.ConnInfo
+	if err := c.ConfigReader.UnmarshalKey("ConnInfo", &ci); err != nil {
+		fmt.Println(err)
+	}
+	c.ConnInfo = &ci
+	cfg := gsdmysql.NewConfig()
+	cfg.User = ci.Username
+	cfg.Passwd = ci.Password
+	cfg.Net = "tcp"
+	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
+	cfg.DBName = ci.Name
+
+	db, err := sql.Open(ci.Type, cfg.FormatDSN())
+	if err != nil {
 		c.Logger.Printf("Error: %v.\n", err)
 		c.Logger.Println("Service goes into `Idle mode`.")
 		c.Logger.Println("Please note the service configuration is incomplete.")
 		c.State = services.StateIdle
 		return &c, err
 	}
+	c.DB = db
+
 	return &c, nil
 }
 
@@ -46,47 +81,39 @@ func (c *Credentials) Start() error {
 		v1 := c.Router.Group("/v1")
 		v1.POST("auth/login", c.OnUserLogin)
 		v1.POST("auth/register", c.OnUserRegister)
+		// v1.POST("auth/forgot", c.OnForgotPassword)
 	}
-	c.Router.Run(":9999")
-	return nil
+
+	go func() {
+		if err := c.Router.Run(":9999"); err != nil && err != http.ErrServerClosed {
+			c.Logger.Fatalf("Router failed: %v\n", err)
+		}
+	}()
+
+	kill := make(chan os.Signal, 1)
+	signal.Notify(kill, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-kill
+	c.Logger.Printf("Gracefully shutting down the server: %v\n.", sig)
+	c.State = services.StateDown
+	c.DB.Close()
+	return fmt.Errorf("server closed")
 }
 
-func (c *Credentials) Stop() error { panic("Stop not implemented") }
-
-func (c *Credentials) ReadConfig() error {
-	viper.SetConfigName("CredentialService")
-	viper.AddConfigPath(os.Getenv("CREDENTIALS_CONFIG_DIR_PATH"))
-
-	err := viper.ReadInConfig()
-	if err != nil {
-		return err
+func (c *Credentials) SetConfig() (*viper.Viper, error) {
+	v := viper.New()
+	v.SetConfigName("CredentialsConfig")
+	v.SetConfigType("toml")
+	v.AddConfigPath(os.Getenv("CREDENTIALS_CONFIG_DIR_PATH"))
+	if err := v.ReadInConfig(); err != nil {
+		return nil, err
 	}
-
-	dbName := viper.Get("DatabaseConfig.name").(string)
-	username := viper.Get("DatabaseConfig.username").(string)
-	password := viper.Get("DatabaseConfig.password").(string)
-	port := viper.Get("DatabaseConfig.port").(string)
-	sqlInfo := fmt.Sprintf("%v:%v@tcp(localhost:%v)/%v",
-		username, password, port, dbName)
-
-	db, err := sql.Open("mysql", sqlInfo)
-	if err != nil {
-		return err
-	}
-
-	c.DB = db
-	c.Router = gin.Default()
-	return nil
+	return v, nil
 }
 
 // validateUser extracts password from database and checks if the user exists.
 // Then two password are compared to each other - if success, nil is returned.
-func (c *Credentials) validateUser(userFetched *sql.Row, password string) error {
-	var hashedPassword []byte
-	if err := userFetched.Scan(&hashedPassword); err != nil {
-		return fmt.Errorf("user doesn't exist")
-	}
-	if err := bcrypt.CompareHashAndPassword(hashedPassword, []byte(password)); err != nil {
+func (c *Credentials) validateUser(fetchedPassword, requestPassword []byte) error {
+	if err := bcrypt.CompareHashAndPassword(fetchedPassword, requestPassword); err != nil {
 		return fmt.Errorf("user credentials don't match")
 	}
 	return nil
@@ -94,8 +121,8 @@ func (c *Credentials) validateUser(userFetched *sql.Row, password string) error 
 
 // OnUserLogin implements logic for logging.
 func (c *Credentials) OnUserLogin(ctx *gin.Context) {
-	var u services.UserLoginRequest
-	if err := ctx.ShouldBindJSON(&u); err != nil {
+	var ulr services.UserLoginRequest
+	if err := ctx.ShouldBindJSON(&ulr); err != nil {
 		c.Logger.Println(err)
 		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
 			AccessToken: "",
@@ -106,8 +133,56 @@ func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 		return
 	}
 
-	userFetched := c.DB.QueryRow("SELECT password FROM user_credentials WHERE username=?", u.Username)
-	if err := c.validateUser(userFetched, u.Password); err != nil {
+	requestedUsername, ok := ulr.Username.(string)
+	if !ok {
+		c.Logger.Println("couldn't cast username to string")
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "service is having some troubles.",
+		})
+		return
+	}
+
+	requestedPassword, ok := ulr.Password.(string)
+	if !ok {
+		c.Logger.Println("couldn't cast password into string")
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "service is having some troubles.",
+		})
+		return
+	}
+
+	requestedPasswordInBytes := []byte(requestedPassword)
+	user, err := c.FetchUser(&requestedUsername)
+	if err != nil {
+		c.Logger.Println(err)
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "service is having some troubles",
+		})
+		return
+	}
+
+	fetchedPasswordInBytes, ok := user.Password.([]byte)
+	if !ok {
+		c.Logger.Println("couldn't cast to string")
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "service is having some troubles",
+		})
+		return
+	}
+
+	if err := c.validateUser(fetchedPasswordInBytes, requestedPasswordInBytes); err != nil {
 		c.Logger.Println(err)
 		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
 			AccessToken: "",
@@ -118,7 +193,7 @@ func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
-		AccessToken: "Not implemented",
+		AccessToken: c.GenerateSessionToken(requestedUsername, requestedPassword),
 		TokenType:   "Not implemented",
 		ExpiresIn:   999,
 		Message:     "",
@@ -139,6 +214,29 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 		return
 	}
 
+	username, ok := u.Username.(string)
+	if !ok {
+		c.Logger.Println("couldn't cast to string")
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "incorrect request.",
+		})
+		return
+	}
+
+	if _, err := c.FetchUser(&username); err == nil {
+		c.Logger.Println("user exists")
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "credentials are taken",
+		})
+		return
+	}
+
 	// Start a transaction to push full user credentials.
 	tx, err := c.DB.BeginTx(ctx, nil)
 	defer tx.Rollback()
@@ -154,7 +252,19 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), 10)
+	requestPassword, ok := u.Password.(string)
+	if !ok {
+		c.Logger.Println("couldn't cast to string")
+		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
+			AccessToken: "",
+			TokenType:   "none",
+			ExpiresIn:   0,
+			Message:     "service has some troubles.",
+		})
+		return
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(requestPassword), 10)
 	if err != nil {
 		c.Logger.Println(err)
 		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
@@ -182,6 +292,7 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	id, _ := res.LastInsertId()
 	_, err = tx.Exec(`INSERT INTO user_identity(ID, birthday, gender) VALUES (?, ?, ?)`, id, u.Birthday, u.Gender)
 	if err != nil {
+		c.Logger.Println(err)
 		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
 			AccessToken: "",
 			TokenType:   "none",
@@ -201,9 +312,27 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
-		AccessToken: "Not implemented",
+		AccessToken: c.GenerateSessionToken(username, passwordStringified),
 		TokenType:   "Not implemented",
 		ExpiresIn:   999,
 		Message:     "",
 	})
+}
+
+func (c *Credentials) GenerateSessionToken(username, password string) string {
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
+		jwt.MapClaims{
+			"username": username,
+			"password": password,
+			"exp":      time.Now().Add(time.Hour * 1).Unix(),
+		})
+
+	// Dodam potem errory
+	tok, _ := token.SignedString(SecretTokenKey)
+	return tok
+}
+
+// ExposeConnInfo exposes configuration.
+func (c *Credentials) ExposeConnInfo() *services.ConnInfo {
+	return c.ConnInfo
 }

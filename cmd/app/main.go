@@ -1,28 +1,48 @@
 package main
 
 import (
-	"fmt"
+	"flag"
+	"log"
 	"path/filepath"
 
-	"github.com/sadsonkeenolee/IO_projekt/internal/services/credentials"
 	"os"
+
+	"github.com/sadsonkeenolee/IO_projekt/internal/services/credentials"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 )
 
 func main() {
-	// WARNING: Jesli serwisy beda rozdzielone, to sciezki musza byc tu
-	// WARNING: Ta apka to TEORETYCZNIE serwis logowania / rejestracji
-	credentialsConfigDirPath, err := filepath.Abs("api/configs")
+	l := log.New(os.Stdout, "main: ", log.LstdFlags)
+	configsPath, err := filepath.Abs("api/configs")
+
 	if err != nil {
-		panic(fmt.Sprintf("The function failed: %v", err))
+		l.Fatalf("The function failed: %v", err)
 	}
 
-	credentialsMigrationsDirPath, err := filepath.Abs("api/configs/migrations/credentials")
+	migrationsPath, err := filepath.Abs("api/migrations/credentials")
 	if err != nil {
-		panic(fmt.Sprintf("The function failed: %v", err))
+		l.Fatalf("The function failed: %v", err)
 	}
+	migrationsPath = "file://" + migrationsPath
 
-	_ = os.Setenv("CREDENTIALS_CONFIG_DIR_PATH", credentialsConfigDirPath)
-	_ = os.Setenv("CREDENTIALS_MIGRATIONS_DIR_PATH", credentialsMigrationsDirPath)
+	_ = os.Setenv("CREDENTIALS_CONFIG_DIR_PATH", configsPath)
+	_ = os.Setenv("CREDENTIALS_MIGRATIONS_DIR_PATH", migrationsPath)
+
+	migrateFlag := flag.Bool("migrate", false, "run a migration in the current app")
+	UpFlag := flag.Bool("up", false, "run an up migration, otherwise down")
+	versionFlag := flag.Int("version", 0, "specify the number of the version")
+	flag.Parse()
 	c, _ := credentials.NewCredentials()
-	c.Start()
+
+	if *migrateFlag {
+		ci := c.ExposeConnInfo()
+		if err := utils.MigrateToVersion(*versionFlag, ci, &migrationsPath, UpFlag); err != nil {
+			l.Fatalf("The function failed: %v", err)
+		}
+		l.Println("Migration completed.")
+		return
+	}
+
+	err = c.Start()
+	l.Printf("Server returned value: %v.\n", err)
 }

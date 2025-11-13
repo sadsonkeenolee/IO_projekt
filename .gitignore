@@ -1,4 +1,5 @@
-# Go
+# General
+.vscode/
 build/
 api/configs/*
 !api/configs/README.md
