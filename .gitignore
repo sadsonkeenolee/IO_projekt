@@ -3,3 +3,4 @@
 build/
 api/configs/*
 !api/configs/README.md
+temp/

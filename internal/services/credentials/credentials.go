@@ -75,7 +75,6 @@ func NewCredentials() (services.IService, error) {
 		return &c, err
 	}
 	c.DB = db
-
 	return &c, nil
 }
 
