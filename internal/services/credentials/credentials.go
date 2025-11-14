@@ -28,6 +28,10 @@ import (
 
 var SecretTokenKey = []byte("bardzo_tajny_token_nie_udostepniac")
 
+const (
+	DefaultExpirationTime = 3600
+)
+
 type Credentials struct {
 	services.Service
 }
@@ -124,36 +128,21 @@ func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 	var ulr services.UserLoginRequest
 	if err := ctx.ShouldBindJSON(&ulr); err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     err.Error(),
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
 
 	requestedUsername, ok := ulr.Username.(string)
 	if !ok {
-		c.Logger.Println("couldn't cast username to string")
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "service is having some troubles.",
-		})
+		c.Logger.Printf("username (%v) field has invalid type\n", ulr.Username)
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	requestedPassword, ok := ulr.Password.(string)
 	if !ok {
-		c.Logger.Println("couldn't cast password into string")
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "service is having some troubles.",
-		})
+		c.Logger.Printf("password (%v) field has invalid type\n", ulr.Password)
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
 
@@ -161,42 +150,28 @@ func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 	user, err := c.FetchUser(&requestedUsername)
 	if err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "service is having some troubles",
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
 		return
 	}
 
 	fetchedPasswordInBytes, ok := user.Password.([]byte)
 	if !ok {
-		c.Logger.Println("couldn't cast to string")
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "service is having some troubles",
-		})
+		c.Logger.Printf("password (%v) can't be casted into bytes\n", user.Password)
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	if err := c.validateUser(fetchedPasswordInBytes, requestedPasswordInBytes); err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     err.Error(),
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
 		return
 	}
+
 	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
 		AccessToken: c.GenerateSessionToken(requestedUsername, requestedPassword),
-		TokenType:   "Not implemented",
-		ExpiresIn:   999,
-		Message:     "",
+		TokenType:   "Bearer",
+		ExpiresIn:   DefaultExpirationTime,
+		Message:     "credentials are correct",
 	})
 }
 
@@ -205,35 +180,21 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	var u services.UserRegisterRequest
 	if err := ctx.ShouldBindJSON(&u); err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "incorrect request.",
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
 
 	username, ok := u.Username.(string)
 	if !ok {
-		c.Logger.Println("couldn't cast to string")
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "incorrect request.",
-		})
+		c.Logger.Printf("username (%v) field has invalid type\n", u.Username)
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	if _, err := c.FetchUser(&username); err == nil {
-		c.Logger.Println("user exists")
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "credentials are taken",
-		})
+		c.Logger.Printf("user `%v` exists.\n", username)
+		// IMPORTANT: To prevent some bad actors, don't inform a user about it.
+		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
 		return
 	}
 
@@ -243,36 +204,21 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 
 	if err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "service has some troubles.",
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	requestPassword, ok := u.Password.(string)
 	if !ok {
-		c.Logger.Println("couldn't cast to string")
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "service has some troubles.",
-		})
+		c.Logger.Printf("password (%v) field couldn't be casted to string\n", u.Password)
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(requestPassword), 10)
 	if err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "service has some troubles.",
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
@@ -280,12 +226,7 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	res, err := tx.Exec(`INSERT INTO user_credentials(username, password, email) VALUES (?, ?, ?)`, u.Username, passwordStringified, u.Email)
 	if err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "couldn't register you in.",
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
 		return
 	}
 
@@ -293,29 +234,21 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	_, err = tx.Exec(`INSERT INTO user_identity(ID, birthday, gender) VALUES (?, ?, ?)`, id, u.Birthday, u.Gender)
 	if err != nil {
 		c.Logger.Println(err)
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "couldn't register you in.",
-		})
+		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		ctx.JSON(http.StatusBadRequest, services.CredentialsCoreResponse{
-			AccessToken: "",
-			TokenType:   "none",
-			ExpiresIn:   0,
-			Message:     "couldn't register you in.",
-		})
+		c.Logger.Println(err)
+		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
 		return
 	}
+
 	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
 		AccessToken: c.GenerateSessionToken(username, passwordStringified),
-		TokenType:   "Not implemented",
-		ExpiresIn:   999,
-		Message:     "",
+		TokenType:   "Bearer",
+		ExpiresIn:   DefaultExpirationTime,
+		Message:     "registration completed",
 	})
 }
 

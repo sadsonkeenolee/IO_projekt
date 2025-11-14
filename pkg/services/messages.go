@@ -1,5 +1,11 @@
 package services
 
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
 // UserCore implements very basic info about user. Username and Password are
 // either of type string or []byte.
 type UserCore struct {
@@ -29,4 +35,25 @@ type CredentialsCoreResponse struct {
 	TokenType   string `json:"token_type"`
 	ExpiresIn   uint32 `json:"expires_in"`
 	Message     any    `json:"message"`
+}
+
+const (
+	InternalErrorMessage  = "service is having some troubles"
+	InvalidRequestMessage = "service couldn't parse your request"
+	LoginErrorMessage     = "username or/and password are incorrect"
+	RegisterErrorMessage  = "service is having some troubles while trying to register you"
+)
+
+// NewBadCredentialsCoreResponse defines a basic error message to reduce
+// boilerplate.
+func NewBadCredentialsCoreResponse(ctx *gin.Context, message string) {
+	ctx.JSON(
+		http.StatusBadRequest,
+		CredentialsCoreResponse{
+			AccessToken: "None",
+			TokenType:   "None",
+			ExpiresIn:   0,
+			Message:     message,
+		},
+	)
 }
