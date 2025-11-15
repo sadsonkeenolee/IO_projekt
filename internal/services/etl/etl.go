@@ -2,12 +2,16 @@
 package etl
 
 import (
+	"encoding/csv"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
 	"database/sql"
 
@@ -17,12 +21,54 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	NoInformation string = "No information"
+)
+
 type DatasetFileMetadata struct {
 	Directory string
 	Type      string
 	IsRead    bool
-	CreatedAt string
-	ReadAt    string
+	CreatedAt *string
+	ReadAt    *string
+}
+
+type MovieMetadataExtracted struct {
+	Budget              uint32
+	Genres              map[uint32]string
+	MovieId             string
+	Keywords            map[uint32]string
+	OriginalLanguage    string
+	Title               string
+	Overview            string
+	Popularity          float32
+	ProductionCompanies map[uint32]string
+	ProductionCountries map[string]string
+	ReleaseDate         time.Time
+	Revenue             int32
+	SpokenLanguages     map[string]string
+	Status              string
+	Tagline             string
+	AverageScore        float32
+	TotalScore          uint64
+	Cast                *map[uint32]string
+	Crew                *map[uint32]string
+}
+
+func (dfm *DatasetFileMetadata) String() string {
+	if dfm.ReadAt == nil {
+		ni := NoInformation
+		dfm.ReadAt = &ni
+	}
+	return fmt.Sprintf(`
+		DatasetFileMetadata { 
+			Directory: %v
+			Type: %v
+			Read?: %v
+			CreatedAt: %v
+			ReadAt: %v
+		}`,
+		dfm.Directory, dfm.Type, dfm.IsRead, *dfm.CreatedAt, *dfm.ReadAt)
 }
 
 type Etl struct {
@@ -72,7 +118,7 @@ func NewEtl() (services.IService, error) {
 }
 
 func (e *Etl) IsDataExtracted() ([]*DatasetFileMetadata, error) {
-	rows, err := e.DB.Query(`SELECT directory, data_type, read, created_at, read_at FROM schema_reads`)
+	rows, err := e.DB.Query(`SELECT directory, data_type, is_read, created_at, read_at FROM read_table`)
 	if err != nil {
 		e.Logger.Println(err)
 		return nil, err
@@ -94,7 +140,55 @@ func (e *Etl) IsDataExtracted() ([]*DatasetFileMetadata, error) {
 	return dfms, nil
 }
 
-func (e *Etl) Extract(...func()) error { panic("Not implemented") }
+func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
+	if l == nil {
+		panic("CsvStreamer: No logging instance provided.")
+	}
+
+	fd, err := os.Open(*path)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+	csvReader := csv.NewReader(fd)
+
+	// read until EOF
+	for {
+		record, err := csvReader.Read()
+
+		if err == io.EOF {
+			break
+		}
+
+		if err != nil {
+			l.Printf("Error while parsing: %v", err)
+			continue
+		}
+
+		c <- record
+	}
+	close(c)
+	return nil
+}
+
+// Extract parses stream and puts data into meaningful structure.
+// Function requires full path to a file and defined extractor functions that
+// will perform other extraction operations in order provided by the caller.
+func (e *Etl) Extract(path *string, extractors ...func(stream *[]string, opts ...*any)) ([]*any, error) {
+	c := make(chan []string)
+	go CsvStreamer(path, e.Logger, c)
+	// TODO: powinna byc raczej mapa typu {movie_id: Metadane}
+	var dataStructure []*any
+
+	for stream := range c {
+		var data any
+		for _, extractor := range extractors {
+			extractor(&stream, &data)
+		}
+		dataStructure = append(dataStructure, &data)
+	}
+	return dataStructure, nil
+}
 
 func (e *Etl) Start() error {
 	dfms, err := e.IsDataExtracted()
@@ -105,10 +199,14 @@ func (e *Etl) Start() error {
 		e.State = services.StateIdle
 	}
 
-	if dfms != nil {
+	// var idToGenre map[uint]string
+	if err == nil && dfms != nil {
 		// Extract data here
-		e.Logger.Printf("Extracting data for the first ever setup...")
-		panic("Not implemented")
+		e.Logger.Println("Extracting data for the first ever setup...")
+		path := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_credits.csv")
+		// na razie to nic nie robi
+		data, _ := e.Extract(&path)
+		e.Logger.Printf("Extracted: %v", len(data))
 	}
 	// v1 of api.
 	{
@@ -146,4 +244,8 @@ func (e *Etl) SetConfig() (*viper.Viper, error) {
 // ExposeConnInfo exposes configuration.
 func (e *Etl) ExposeConnInfo() *services.ConnInfo {
 	return e.ConnInfo
+}
+
+func (e *Etl) String() string {
+	return "ETL"
 }

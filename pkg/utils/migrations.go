@@ -3,7 +3,6 @@ package utils
 import (
 	"database/sql"
 	"fmt"
-	"log"
 
 	gsdmysql "github.com/go-sql-driver/mysql"
 	"github.com/golang-migrate/migrate/v4"
@@ -17,7 +16,7 @@ import (
 // If isUp is false, then the database state will be undone by the number of
 // versions.
 func MigrateToVersion(version int, ci *services.ConnInfo,
-	migrationsPath *string, isUp *bool) error {
+	migrationsPath *string, isUp *bool, shouldForce *bool) error {
 	cfg := gsdmysql.NewConfig()
 	cfg.User = ci.Username
 	cfg.Passwd = ci.Password
@@ -27,12 +26,12 @@ func MigrateToVersion(version int, ci *services.ConnInfo,
 
 	db, err := sql.Open(ci.Type, cfg.FormatDSN())
 	if err != nil {
-		log.Fatalf("Couldn't open database connection: %v", err)
+		return fmt.Errorf("couldn't open database connection, reason: %v\n", err)
 	}
 
 	driver, err := mysql.WithInstance(db, &mysql.Config{})
 	if err != nil {
-		log.Fatalf("Couldn't create a driver: %v.\n", err)
+		return fmt.Errorf("couldn't create a driver, reason: %v\n", err)
 	}
 
 	m, err := migrate.NewWithDatabaseInstance(
@@ -42,13 +41,22 @@ func MigrateToVersion(version int, ci *services.ConnInfo,
 	)
 
 	if err != nil {
-		log.Fatalf("Couldn't migrate: %v.\n", err)
+		return fmt.Errorf("couldn't migrate, reason: %v\n", err)
 	}
 
 	if !*isUp {
 		version = -version
 	}
 
-	m.Steps(version)
+	if *shouldForce {
+		err = m.Force(version)
+	} else {
+		err = m.Steps(version)
+	}
+
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

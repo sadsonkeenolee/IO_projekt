@@ -268,3 +268,7 @@ func (c *Credentials) GenerateSessionToken(username, password string) string {
 func (c *Credentials) ExposeConnInfo() *services.ConnInfo {
 	return c.ConnInfo
 }
+
+func (c *Credentials) String() string {
+	return "Credentials"
+}
