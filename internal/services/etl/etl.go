@@ -11,65 +11,15 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"database/sql"
 
 	"github.com/gin-gonic/gin"
 	gsdmysql "github.com/go-sql-driver/mysql"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 	"github.com/spf13/viper"
 )
-
-const (
-	NoInformation string = "No information"
-)
-
-type DatasetFileMetadata struct {
-	Directory string
-	Type      string
-	IsRead    bool
-	CreatedAt *string
-	ReadAt    *string
-}
-
-type MovieMetadataExtracted struct {
-	Budget              uint32
-	Genres              map[uint32]string
-	MovieId             string
-	Keywords            map[uint32]string
-	OriginalLanguage    string
-	Title               string
-	Overview            string
-	Popularity          float32
-	ProductionCompanies map[uint32]string
-	ProductionCountries map[string]string
-	ReleaseDate         time.Time
-	Revenue             int32
-	SpokenLanguages     map[string]string
-	Status              string
-	Tagline             string
-	AverageScore        float32
-	TotalScore          uint64
-	Cast                *map[uint32]string
-	Crew                *map[uint32]string
-}
-
-func (dfm *DatasetFileMetadata) String() string {
-	if dfm.ReadAt == nil {
-		ni := NoInformation
-		dfm.ReadAt = &ni
-	}
-	return fmt.Sprintf(`
-		DatasetFileMetadata { 
-			Directory: %v
-			Type: %v
-			Read?: %v
-			CreatedAt: %v
-			ReadAt: %v
-		}`,
-		dfm.Directory, dfm.Type, dfm.IsRead, *dfm.CreatedAt, *dfm.ReadAt)
-}
 
 type Etl struct {
 	services.Service
@@ -117,7 +67,7 @@ func NewEtl() (services.IService, error) {
 	return &e, nil
 }
 
-func (e *Etl) IsDataExtracted() ([]*DatasetFileMetadata, error) {
+func (e *Etl) IsDataExtracted() ([]*database.DatasetFileMetadata, error) {
 	rows, err := e.DB.Query(`SELECT directory, data_type, is_read, created_at, read_at FROM read_table`)
 	if err != nil {
 		e.Logger.Println(err)
@@ -125,9 +75,9 @@ func (e *Etl) IsDataExtracted() ([]*DatasetFileMetadata, error) {
 	}
 	defer rows.Close()
 
-	dfms := []*DatasetFileMetadata{}
+	dfms := []*database.DatasetFileMetadata{}
 	for rows.Next() {
-		dfm := &DatasetFileMetadata{}
+		dfm := &database.DatasetFileMetadata{}
 		if err := rows.Scan(&dfm.Directory, &dfm.Type, &dfm.IsRead,
 			&dfm.CreatedAt, &dfm.ReadAt); err != nil {
 			e.Logger.Printf("Error occured: %v.\n", err)
@@ -174,20 +124,35 @@ func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 // Extract parses stream and puts data into meaningful structure.
 // Function requires full path to a file and defined extractor functions that
 // will perform other extraction operations in order provided by the caller.
-func (e *Etl) Extract(path *string, extractors ...func(stream *[]string, opts ...*any)) ([]*any, error) {
+func (e *Etl) Extract(path *string, extractors ...func(stream *[]string, opts *any)) ([]*any, error) {
 	c := make(chan []string)
 	go CsvStreamer(path, e.Logger, c)
-	// TODO: powinna byc raczej mapa typu {movie_id: Metadane}
-	var dataStructure []*any
+	var extractedStructs []*any = make([]*any, 1)
+	var structsTracker uint = 0
 
 	for stream := range c {
 		var data any
 		for _, extractor := range extractors {
 			extractor(&stream, &data)
 		}
-		dataStructure = append(dataStructure, &data)
+		extractedStructs[structsTracker] = &data
+		extractedStructs = append(extractedStructs, extractedStructs[structsTracker])
+		structsTracker++
 	}
-	return dataStructure, nil
+	return extractedStructs, nil
+}
+
+// Transform applies transformations to the given structs
+func (e *Etl) Transform(left, right *[]*any, opts ...func(*[]*any, *[]*any, *[]*any)) ([]*any, error) {
+	var transformedStructs []*any
+	for _, transform := range opts {
+		transform(left, right, &transformedStructs)
+	}
+	return transformedStructs, nil
+}
+
+func (e *Etl) Load(final *[]*any, queries ...string) error {
+	panic("Not implemented")
 }
 
 func (e *Etl) Start() error {
@@ -199,14 +164,17 @@ func (e *Etl) Start() error {
 		e.State = services.StateIdle
 	}
 
-	// var idToGenre map[uint]string
 	if err == nil && dfms != nil {
 		// Extract data here
 		e.Logger.Println("Extracting data for the first ever setup...")
-		path := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_credits.csv")
-		// na razie to nic nie robi
-		data, _ := e.Extract(&path)
-		e.Logger.Printf("Extracted: %v", len(data))
+		path1 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_movies.csv")
+		path2 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_credits.csv")
+
+		// TODO: Dodac zwracanie errorow
+		mm1, _ := e.Extract(&path1, database.TmdbMapFromStream)
+		mm2, _ := e.Extract(&path2, database.TmdbMapCreditsFromStream)
+		final, _ := e.Transform(&mm1, &mm2, database.TmdbJoinBoth)
+		_ = e.Load(&final)
 	}
 	// v1 of api.
 	{

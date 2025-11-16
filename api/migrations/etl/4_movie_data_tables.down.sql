@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS genres;
+DROP TABLE IF EXISTS keywords;
+DROP TABLE IF EXISTS languages; 
+DROP TABLE IF EXISTS companies; 
+DROP TABLE IF EXISTS countries;

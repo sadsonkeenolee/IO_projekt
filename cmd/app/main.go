@@ -18,6 +18,7 @@ import (
 var migrateFlag = flag.Bool("migrate", false, "run a migration in the current app")
 var forceFlag = flag.Bool("force", false, "will force any operation you do")
 var upFlag = flag.Bool("up", false, "run an up migration, otherwise down")
+var dropFlag = flag.Bool("drop", false, "wipe out a database, use only if the database is bugged")
 var versionFlag = flag.Int("version", 0, "specify the number of the version")
 var serviceFlag = flag.String("service", "credentials", "specify which service to run")
 
@@ -82,9 +83,18 @@ func main() {
 
 	if *migrateFlag {
 		ci := s.ExposeConnInfo()
+
+		if *dropFlag {
+			if err := utils.MigrateWipe(&migrationsPath, ci); err != nil {
+				l.Fatalf("The function failed: %v\n", err)
+			}
+			l.Println("Database wiped.")
+			return
+		}
+
 		if err := utils.MigrateToVersion(*versionFlag, ci,
 			&migrationsPath, upFlag, forceFlag); err != nil {
-			l.Fatalf("The function failed: %v", err)
+			l.Fatalf("The function failed: %v\n", err)
 		}
 		l.Println("Migration completed.")
 		return

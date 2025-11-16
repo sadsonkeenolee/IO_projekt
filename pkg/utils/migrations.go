@@ -11,10 +11,42 @@ import (
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
 
+func MigrateWipe(migrationsPath *string, ci *services.ConnInfo) error {
+	cfg := gsdmysql.NewConfig()
+	cfg.User = ci.Username
+	cfg.Passwd = ci.Password
+	cfg.Net = "tcp"
+	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
+	cfg.DBName = ci.Name
+
+	url := fmt.Sprintf("%v?multiStatements=true", cfg.FormatDSN())
+	db, err := sql.Open(ci.Type, url)
+	if err != nil {
+		return fmt.Errorf("couldn't open database connection, reason: %v\n", err)
+	}
+
+	driver, err := mysql.WithInstance(db, &mysql.Config{})
+	if err != nil {
+		return fmt.Errorf("couldn't create a driver, reason: %v\n", err)
+	}
+
+	m, err := migrate.NewWithDatabaseInstance(
+		*migrationsPath,
+		ci.Type,
+		driver,
+	)
+
+	if err != nil {
+		return fmt.Errorf("couldn't create an db instance, reason: %v\n", err)
+	}
+
+	return m.Drop()
+}
+
 // MigrateToVersion allows database migrating.
-// If isUp is true, then the state of a database will be changed to the given version.
-// If isUp is false, then the database state will be undone by the number of
-// versions.
+// If isUp is true, then the state of the database is up by version variable.
+// If isUp is false, then the state of the database is down by version variable.
+// If shouldForce is true, then the migration will be forced.
 func MigrateToVersion(version int, ci *services.ConnInfo,
 	migrationsPath *string, isUp *bool, shouldForce *bool) error {
 	cfg := gsdmysql.NewConfig()
@@ -24,7 +56,8 @@ func MigrateToVersion(version int, ci *services.ConnInfo,
 	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
 	cfg.DBName = ci.Name
 
-	db, err := sql.Open(ci.Type, cfg.FormatDSN())
+	url := fmt.Sprintf("%v?multiStatements=true", cfg.FormatDSN())
+	db, err := sql.Open(ci.Type, url)
 	if err != nil {
 		return fmt.Errorf("couldn't open database connection, reason: %v\n", err)
 	}
