@@ -3,11 +3,11 @@ CREATE TABLE IF NOT EXISTS movies (
 	budget bigint unsigned null,
 	tmdb_id bigint unsigned not null,
 	-- original_lang_id nie ma tabeli, dodac FK pozniej.
-	original_lang_id bigint unsigned null,
-	title varchar(256) null,
-	overview varchar(512) null,
+	original_lang_id char(2) null,
+	title varchar(256) not null,
+	overview varchar(2048) null,
 	popularity float null,
-	release_date date NULL,
+	release_date date null,
 	revenue bigint null,
 	runtime smallint unsigned null,
 	status varchar(64) null,
@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS movies (
 	vote_average float null,
 	vote_total bigint unsigned null,
 	
-	PRIMARY KEY (ID)
+	PRIMARY KEY (ID),
+	UNIQUE KEY (tmdb_id)
 )
 ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4

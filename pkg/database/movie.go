@@ -1,6 +1,7 @@
 package database
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -86,6 +87,189 @@ type CrewMember struct {
 	Id         uint64 `json:"id"`
 	Job        string `json:"job"`
 	Name       string `json:"name"`
+}
+
+func InsertIntoMovies(db *sql.DB) func(data *any) {
+	// Internal state
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+		_, err := db.Exec("INSERT INTO movies(budget,tmdb_id,title,overview,popularity,release_date,revenue,runtime,status,tagline,vote_average,vote_total) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+			mme.Budget, mme.MovieId, mme.Title, mme.Overview, mme.Popularity,
+			mme.ReleaseDate, mme.Revenue, mme.Runtime, mme.Status, mme.Tagline,
+			mme.AverageScore, mme.TotalScore)
+		if err != nil {
+			fmt.Println(err)
+		}
+	}
+}
+
+func InsertIntoLanguages(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+		for _, sl := range mme.SpokenLanguages {
+			_, err := db.Exec("INSERT INTO languages(encoding, name) VALUES (?, ?)", sl.Encoding, sl.Name)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoKeywords(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+		for _, k := range mme.Keywords {
+			_, err := db.Exec("INSERT INTO keywords(ID, name) VALUES (?, ?)", k.Id, k.Name)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoGenres(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+		for _, g := range mme.Genres {
+			_, err := db.Exec("INSERT INTO genres(ID, name) VALUES (?, ?)", g.Id, g.Name)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoCountries(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+		for _, c := range mme.ProductionCountries {
+			_, err := db.Exec("INSERT INTO countries(encoding, name) VALUES (?, ?)", c.Encoding, c.Name)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoCompanies(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+		for _, c := range mme.ProductionCompanies {
+			_, err := db.Exec("INSERT INTO companies(ID, name) VALUES (?, ?)", c.Id, c.Name)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoMovie2Languages(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+
+		for _, sl := range mme.SpokenLanguages {
+			_, err := db.Exec("INSERT INTO movie2languages(movie_id, language_id) VALUES (?, ?)", mme.MovieId, sl.Encoding)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoMovie2Keywords(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+
+		for _, k := range mme.Keywords {
+			_, err := db.Exec("INSERT INTO movie2keywords(movie_id, keyword_id) VALUES (?, ?)", mme.MovieId, k.Id)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoMovie2Genres(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+
+		for _, g := range mme.Genres {
+			_, err := db.Exec("INSERT INTO movie2genres(movie_id, genre_id) VALUES (?, ?)", mme.MovieId, g.Id)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoMovie2Countries(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+
+		for _, pc := range mme.ProductionCountries {
+			_, err := db.Exec("INSERT INTO movie2countries(movie_id, country_en) VALUES (?, ?)", mme.MovieId, pc.Encoding)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
+}
+
+func InsertIntoMovie2Companies(db *sql.DB) func(data *any) {
+	return func(data *any) {
+		mme, ok := (*data).(MovieMetadataExtracted)
+		if !ok {
+			fmt.Println("invalid interface")
+			return
+		}
+
+		for _, pc := range mme.ProductionCompanies {
+			_, err := db.Exec("INSERT INTO movie2companies(movie_id, company_id) VALUES (?, ?)", mme.MovieId, pc.Id)
+			if err != nil {
+				fmt.Println(err)
+			}
+		}
+	}
 }
 
 func TmdbMapFromStream(stream *[]string, data *any) {

@@ -151,8 +151,13 @@ func (e *Etl) Transform(left, right *[]*any, opts ...func(*[]*any, *[]*any, *[]*
 	return transformedStructs, nil
 }
 
-func (e *Etl) Load(final *[]*any, queries ...string) error {
-	panic("Not implemented")
+func (e *Etl) Load(final *[]*any, loaders ...func(*any)) error {
+	for _, loader := range loaders {
+		for _, el := range *final {
+			loader(el)
+		}
+	}
+	return nil
 }
 
 func (e *Etl) Start() error {
@@ -174,7 +179,19 @@ func (e *Etl) Start() error {
 		mm1, _ := e.Extract(&path1, database.TmdbMapFromStream)
 		mm2, _ := e.Extract(&path2, database.TmdbMapCreditsFromStream)
 		final, _ := e.Transform(&mm1, &mm2, database.TmdbJoinBoth)
-		_ = e.Load(&final)
+		_ = e.Load(&final,
+			database.InsertIntoMovies(e.DB),
+			database.InsertIntoLanguages(e.DB),
+			database.InsertIntoKeywords(e.DB),
+			database.InsertIntoGenres(e.DB),
+			database.InsertIntoCountries(e.DB),
+			database.InsertIntoCompanies(e.DB),
+			database.InsertIntoMovie2Companies(e.DB),
+			database.InsertIntoMovie2Countries(e.DB),
+			database.InsertIntoMovie2Genres(e.DB),
+			database.InsertIntoMovie2Keywords(e.DB),
+			database.InsertIntoMovie2Languages(e.DB),
+		)
 	}
 	// v1 of api.
 	{

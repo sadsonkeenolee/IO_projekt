@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS movie2genres (
 	genre_id bigint unsigned,
 	
 	PRIMARY KEY (ID),
-	FOREIGN KEY (`movie_id`) REFERENCES movies(`ID`) ON DELETE CASCADE,
+	FOREIGN KEY (`movie_id`) REFERENCES movies(`tmdb_id`) ON DELETE CASCADE,
 	FOREIGN KEY (`genre_id`) REFERENCES genres(`ID`) ON DELETE CASCADE
 
 )
@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS movie2keywords (
 	keyword_id bigint unsigned,
 	
 	PRIMARY KEY (ID),
-	FOREIGN KEY (`movie_id`) REFERENCES movies(`ID`) ON DELETE CASCADE,
+	FOREIGN KEY (`movie_id`) REFERENCES movies(`tmdb_id`) ON DELETE CASCADE,
 	FOREIGN KEY (`keyword_id`) REFERENCES keywords(`ID`) ON DELETE CASCADE
 
 )
@@ -29,11 +29,11 @@ COLLATE=utf8mb4_0900_ai_ci;
 CREATE TABLE IF NOT EXISTS movie2languages (
 	ID bigint unsigned auto_increment,
 	movie_id bigint unsigned,
-	language_id bigint unsigned,
+	language_id char(2),
 	
 	PRIMARY KEY (ID),
-	FOREIGN KEY (`movie_id`) REFERENCES movies(`ID`) ON DELETE CASCADE,
-	FOREIGN KEY (`language_id`) REFERENCES languages(`ID`) ON DELETE CASCADE
+	FOREIGN KEY (`movie_id`) REFERENCES movies(`tmdb_id`) ON DELETE CASCADE,
+	FOREIGN KEY (`language_id`) REFERENCES languages(`encoding`) ON DELETE CASCADE
 
 )
 ENGINE=InnoDB
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS movie2companies (
 	company_id bigint unsigned,
 	
 	PRIMARY KEY (ID),
-	FOREIGN KEY (`movie_id`) REFERENCES movies(`ID`) ON DELETE CASCADE,
+	FOREIGN KEY (`movie_id`) REFERENCES movies(`tmdb_id`) ON DELETE CASCADE,
 	FOREIGN KEY (`company_id`) REFERENCES companies(`ID`) ON DELETE CASCADE
 
 )
@@ -56,12 +56,12 @@ COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE IF NOT EXISTS movie2countries (
 	ID bigint unsigned auto_increment,
-	movie_id bigint unsigned,
-	country_id bigint unsigned,
+	movie_id bigint unsigned not null,
+	country_en char(2) not null,
 	
 	PRIMARY KEY (ID),
-	FOREIGN KEY (`movie_id`) REFERENCES movies(`ID`) ON DELETE CASCADE,
-	FOREIGN KEY (`country_id`) REFERENCES countries(`ID`) ON DELETE CASCADE
+	FOREIGN KEY (`movie_id`) REFERENCES movies(`tmdb_id`) ON DELETE CASCADE,
+	FOREIGN KEY (`country_en`) REFERENCES countries(`encoding`) ON DELETE CASCADE
 
 )
 ENGINE=InnoDB
@@ -69,4 +69,4 @@ DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_0900_ai_ci;
 
 ALTER TABLE movies
-	ADD CONSTRAINT FOREIGN KEY(original_lang_id) REFERENCES languages(ID);
+	ADD CONSTRAINT FOREIGN KEY(original_lang_id) REFERENCES languages(encoding);

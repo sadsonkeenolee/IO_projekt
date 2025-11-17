@@ -104,3 +104,11 @@ func main() {
 	err = s.Start()
 	l.Printf("Server returned value: %v.\n", err)
 }
+
+// TODO:
+// -normalizacja i oczyszczenie stringow (baza sie buguje)
+// -ignorowanie duplikatow, jesli dana rzecz juz jest w bazie, nie probowac jej
+// dodawac
+// -zwracanie errorow przez bazy dane
+// -stworzyc interfejsy
+// -batchowanie danych
