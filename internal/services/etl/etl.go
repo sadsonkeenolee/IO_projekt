@@ -21,11 +21,16 @@ import (
 	"github.com/spf13/viper"
 )
 
+type Extractor = func(*[]string, *database.Insertable) error
+type Transformer = func(*[]*database.Insertable, *[]*database.Insertable, *[]*database.Insertable) error
+type Loader = func(*database.Insertable) error
+
 type Etl struct {
 	services.Service
+	BatchSize int
 }
 
-func NewEtl() (services.IService, error) {
+func NewEtl(batchSize int) (services.IService, error) {
 	e := Etl{}
 	l := log.New(os.Stdout, "Etl: ", log.LstdFlags)
 	e.Logger = l
@@ -64,6 +69,7 @@ func NewEtl() (services.IService, error) {
 		return &e, err
 	}
 	e.DB = db
+	e.BatchSize = batchSize
 	return &e, nil
 }
 
@@ -100,6 +106,7 @@ func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 		return err
 	}
 	defer fd.Close()
+	defer close(c)
 	csvReader := csv.NewReader(fd)
 
 	// read until EOF
@@ -117,41 +124,50 @@ func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 
 		c <- record
 	}
-	close(c)
 	return nil
 }
 
 // Extract parses stream and puts data into meaningful structure.
 // Function requires full path to a file and defined extractor functions that
 // will perform other extraction operations in order provided by the caller.
-func (e *Etl) Extract(path *string, extractors ...func(stream *[]string, opts *any)) ([]*any, error) {
+func (e *Etl) Extract(path *string, fns ...Extractor) ([]*database.Insertable, error) {
 	c := make(chan []string)
 	go CsvStreamer(path, e.Logger, c)
-	var extractedStructs []*any = make([]*any, 1)
-	var structsTracker uint = 0
+	var extractedData []*database.Insertable
 
 	for stream := range c {
-		var data any
-		for _, extractor := range extractors {
-			extractor(&stream, &data)
+		var data database.Insertable
+		var shouldAppend bool = true
+		for _, extractor := range fns {
+			err := extractor(&stream, &data)
+			if err != nil {
+				e.Logger.Printf("Got error while extracting: %v\n", err)
+				shouldAppend = false
+				break
+			}
 		}
-		extractedStructs[structsTracker] = &data
-		extractedStructs = append(extractedStructs, extractedStructs[structsTracker])
-		structsTracker++
+
+		if shouldAppend {
+			extractedData = append(extractedData, &data)
+		}
 	}
-	return extractedStructs, nil
+	return extractedData, nil
 }
 
-// Transform applies transformations to the given structs
-func (e *Etl) Transform(left, right *[]*any, opts ...func(*[]*any, *[]*any, *[]*any)) ([]*any, error) {
-	var transformedStructs []*any
-	for _, transform := range opts {
-		transform(left, right, &transformedStructs)
+// Transform applies transformations to the given data. This function will fail
+// and return nil, because data might be malformed. fns variable should embed
+// the database connection.
+func (e *Etl) Transform(left, right *[]*database.Insertable, fns ...Transformer) ([]*database.Insertable, error) {
+	var transformedData []*database.Insertable
+	for _, transform := range fns {
+		if err := transform(left, right, &transformedData); err != nil {
+			return nil, fmt.Errorf("transformations failed: %v\n", err)
+		}
 	}
-	return transformedStructs, nil
+	return transformedData, nil
 }
 
-func (e *Etl) Load(final *[]*any, loaders ...func(*any)) error {
+func (e *Etl) Load(final *[]*database.Insertable, loaders ...Loader) error {
 	for _, loader := range loaders {
 		for _, el := range *final {
 			loader(el)
@@ -175,11 +191,22 @@ func (e *Etl) Start() error {
 		path1 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_movies.csv")
 		path2 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_credits.csv")
 
-		// TODO: Dodac zwracanie errorow
-		mm1, _ := e.Extract(&path1, database.TmdbMapFromStream)
-		mm2, _ := e.Extract(&path2, database.TmdbMapCreditsFromStream)
-		final, _ := e.Transform(&mm1, &mm2, database.TmdbJoinBoth)
-		_ = e.Load(&final,
+		mme1, err := e.Extract(&path1, database.TmdbMapFromStream)
+		if err != nil {
+			e.Logger.Fatalf("First extraction failed: %v\n", err)
+		}
+		e.Logger.Println("First extraction completed.")
+		mme2, err := e.Extract(&path2, database.TmdbMapCreditsFromStream)
+		if err != nil {
+			e.Logger.Fatalf("Second extraction failed: %v\n", err)
+		}
+		e.Logger.Println("Second extraction completed.")
+		final, err := e.Transform(&mme1, &mme2, database.TmdbJoinBoth)
+		if err != nil {
+			e.Logger.Fatalf("Transforming failed: %v\n", err)
+		}
+		e.Logger.Println("Transforming completed.")
+		err = e.Load(&final,
 			database.InsertIntoMovies(e.DB),
 			database.InsertIntoLanguages(e.DB),
 			database.InsertIntoKeywords(e.DB),
@@ -192,6 +219,10 @@ func (e *Etl) Start() error {
 			database.InsertIntoMovie2Keywords(e.DB),
 			database.InsertIntoMovie2Languages(e.DB),
 		)
+		if err != nil {
+			e.Logger.Fatalf("Loading failed: %v\n", err)
+		}
+		e.Logger.Println("Loading completed.")
 	}
 	// v1 of api.
 	{
