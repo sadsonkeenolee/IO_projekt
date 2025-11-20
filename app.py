@@ -20,7 +20,18 @@ class RecommendedItem(Item):
  
 class RecommendResponse(BaseModel):
     items: List[RecommendedItem]
- 
+
+class FeedbackRequest(BaseModel):
+  user_id: int
+  item_id: int
+  item_type: ItemType
+  event: str # 'like', 'dislike'
+  score_shown: Optional[float] = None
+
+@app.get("/ml/health")
+def health():
+  return {"status":"ok", "service":"ml", "version":"0.1.0"}
+
 @app.post("/ml/recommend", response_model=RecommendResponse)
 def recommend(req: RecommendRequest):
     dummy = [
@@ -29,4 +40,9 @@ def recommend(req: RecommendRequest):
         RecommendedItem(id=303, type="concert", score=0.88)
     ]
     return RecommendResponse(items=dummy[:req.limit])
+
+@app.post("/ml/feedback")
+def feedback(req: FeedbackRequest):
+  print("Feedback:", req.dict())
+  return {"status": "logged"}
  
