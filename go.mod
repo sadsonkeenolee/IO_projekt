@@ -5,8 +5,8 @@ go 1.25.4
 require (
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible
 	github.com/gin-gonic/gin v1.11.0
+	github.com/go-mysql/errors v0.0.0-20180603193453-03314bea68e0
 	github.com/go-sql-driver/mysql v1.9.3
-	github.com/gogo/protobuf v1.3.2
 	github.com/golang-migrate/migrate/v4 v4.19.0
 	github.com/spf13/viper v1.21.0
 	golang.org/x/crypto v0.40.0

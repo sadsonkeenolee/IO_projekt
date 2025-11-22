@@ -78,7 +78,7 @@ func main() {
 	case Credentials:
 		s, _ = credentials.NewCredentials()
 	case Etl:
-		s, _ = etl.NewEtl(64)
+		s, _ = etl.NewEtl(1000)
 	}
 
 	if *migrateFlag {

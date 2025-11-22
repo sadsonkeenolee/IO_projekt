@@ -2,15 +2,14 @@
 package etl
 
 import (
-	"encoding/csv"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"database/sql"
 
@@ -18,19 +17,20 @@ import (
 	gsdmysql "github.com/go-sql-driver/mysql"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 	"github.com/spf13/viper"
 )
 
-type Extractor = func(*[]string, *database.Insertable) error
-type Transformer = func(*[]*database.Insertable, *[]*database.Insertable, *[]*database.Insertable) error
-type Loader = func(*database.Insertable) error
+type ExtractFunc = func(*[]string, *database.Insertable) error
+type TransformFunc = func(*[]*database.Insertable, *[]*database.Insertable, *[]*database.Insertable) error
+type LoadFunc = func(*database.Insertable) error
 
 type Etl struct {
 	services.Service
-	BatchSize int
+	MaxBatchSize int
 }
 
-func NewEtl(batchSize int) (services.IService, error) {
+func NewEtl(maxBatchSize int) (services.IService, error) {
 	e := Etl{}
 	l := log.New(os.Stdout, "Etl: ", log.LstdFlags)
 	e.Logger = l
@@ -69,7 +69,7 @@ func NewEtl(batchSize int) (services.IService, error) {
 		return &e, err
 	}
 	e.DB = db
-	e.BatchSize = batchSize
+	e.MaxBatchSize = maxBatchSize
 	return &e, nil
 }
 
@@ -96,51 +96,25 @@ func (e *Etl) IsDataExtracted() ([]*database.DatasetFileMetadata, error) {
 	return dfms, nil
 }
 
-func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
-	if l == nil {
-		panic("CsvStreamer: No logging instance provided.")
-	}
-
-	fd, err := os.Open(*path)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
-	defer close(c)
-	csvReader := csv.NewReader(fd)
-
-	// read until EOF
-	for {
-		record, err := csvReader.Read()
-
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			l.Printf("Error while parsing: %v", err)
-			continue
-		}
-
-		c <- record
-	}
-	return nil
-}
-
 // Extract parses stream and puts data into meaningful structure.
 // Function requires full path to a file and defined extractor functions that
 // will perform other extraction operations in order provided by the caller.
-func (e *Etl) Extract(path *string, fns ...Extractor) ([]*database.Insertable, error) {
-	c := make(chan []string)
-	go CsvStreamer(path, e.Logger, c)
+func (e *Etl) Extract(path *string, funcs ...ExtractFunc) ([]*database.Insertable, error) {
+	// https://dev.mysql.com/doc/refman/8.4/en/optimizing-innodb-bulk-data-loading.html
+	// https://dev.mysql.com/doc/refman/8.4/en/server-system-variables.html#sysvar_bulk_insert_buffer_size
+	// https://dev.mysql.com/doc/refman/8.4/en/load-data.html
+	// https://dev.mysql.com/doc/refman/8.4/en/insert-optimization.html
+	var c chan []string = make(chan []string)
 	var extractedData []*database.Insertable
 
+	go utils.CsvStreamer(path, e.Logger, c)
 	for stream := range c {
 		var data database.Insertable
 		var shouldAppend bool = true
-		for _, extractor := range fns {
+		for _, extractor := range funcs {
 			err := extractor(&stream, &data)
 			if err != nil {
+				// TODO: dodac tworzenie errorow
 				e.Logger.Printf("Got error while extracting: %v\n", err)
 				shouldAppend = false
 				break
@@ -157,9 +131,9 @@ func (e *Etl) Extract(path *string, fns ...Extractor) ([]*database.Insertable, e
 // Transform applies transformations to the given data. This function will fail
 // and return nil, because data might be malformed. fns variable should embed
 // the database connection.
-func (e *Etl) Transform(left, right *[]*database.Insertable, fns ...Transformer) ([]*database.Insertable, error) {
+func (e *Etl) Transform(left, right *[]*database.Insertable, funcs ...TransformFunc) ([]*database.Insertable, error) {
 	var transformedData []*database.Insertable
-	for _, transform := range fns {
+	for _, transform := range funcs {
 		if err := transform(left, right, &transformedData); err != nil {
 			return nil, fmt.Errorf("transformations failed: %v\n", err)
 		}
@@ -167,11 +141,9 @@ func (e *Etl) Transform(left, right *[]*database.Insertable, fns ...Transformer)
 	return transformedData, nil
 }
 
-func (e *Etl) Load(final *[]*database.Insertable, loaders ...Loader) error {
-	for _, loader := range loaders {
-		for _, el := range *final {
-			loader(el)
-		}
+func (e *Etl) Load(pipeline *database.Insertable, funcs ...LoadFunc) error {
+	for _, loader := range funcs {
+		loader(pipeline)
 	}
 	return nil
 }
@@ -191,6 +163,7 @@ func (e *Etl) Start() error {
 		path1 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_movies.csv")
 		path2 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_credits.csv")
 
+		start := time.Now()
 		mme1, err := e.Extract(&path1, database.TmdbMapFromStream)
 		if err != nil {
 			e.Logger.Fatalf("First extraction failed: %v\n", err)
@@ -206,23 +179,26 @@ func (e *Etl) Start() error {
 			e.Logger.Fatalf("Transforming failed: %v\n", err)
 		}
 		e.Logger.Println("Transforming completed.")
-		err = e.Load(&final,
-			database.InsertIntoMovies(e.DB),
-			database.InsertIntoLanguages(e.DB),
-			database.InsertIntoKeywords(e.DB),
-			database.InsertIntoGenres(e.DB),
-			database.InsertIntoCountries(e.DB),
-			database.InsertIntoCompanies(e.DB),
-			database.InsertIntoMovie2Companies(e.DB),
-			database.InsertIntoMovie2Countries(e.DB),
-			database.InsertIntoMovie2Genres(e.DB),
-			database.InsertIntoMovie2Keywords(e.DB),
-			database.InsertIntoMovie2Languages(e.DB),
+		// define the general pipeline, but use optimized functions
+		pipeline, err := database.NewInsertPipeline("IGNORE", "IGNORE", &final)
+		err = e.Load(&pipeline,
+			database.InsertIntoMoviesChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoLanguagesChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoKeywordsChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoGenresChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoCountriesChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoCompaniesChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoMovie2CompaniesChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoMovie2CountriesChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoMovie2GenresChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoMovie2KeywordsChunked(e.DB, &e.MaxBatchSize),
+			database.InsertIntoMovie2LanguagesChunked(e.DB, &e.MaxBatchSize),
 		)
 		if err != nil {
 			e.Logger.Fatalf("Loading failed: %v\n", err)
 		}
-		e.Logger.Println("Loading completed.")
+		elapsed := time.Since(start)
+		e.Logger.Printf("Loading completed: %vs.\n", elapsed)
 	}
 	// v1 of api.
 	{
