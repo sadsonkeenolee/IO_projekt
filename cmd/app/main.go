@@ -107,8 +107,4 @@ func main() {
 
 // TODO:
 // -normalizacja i oczyszczenie stringow (baza sie buguje)
-// -ignorowanie duplikatow, jesli dana rzecz juz jest w bazie, nie probowac jej
-// dodawac
-// -zwracanie errorow przez bazy dane
-// -stworzyc interfejsy
-// -batchowanie danych
+// -przebudowanie tabeli (po insert ignore mozna miec niewlasciwe rekordy)

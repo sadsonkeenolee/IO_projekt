@@ -60,7 +60,7 @@ func NewEtl(maxBatchSize int) (services.IService, error) {
 	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
 	cfg.DBName = ci.Name
 
-	db, err := sql.Open(ci.Type, cfg.FormatDSN())
+	db, err := sql.Open(ci.Type, fmt.Sprintf("%v?multiStatements=true", cfg.FormatDSN()))
 	if err != nil {
 		e.Logger.Printf("Error: %v.\n", err)
 		e.Logger.Println("Service goes into `Idle mode`.")
@@ -179,26 +179,75 @@ func (e *Etl) Start() error {
 			e.Logger.Fatalf("Transforming failed: %v\n", err)
 		}
 		e.Logger.Println("Transforming completed.")
-		// define the general pipeline, but use optimized functions
-		pipeline, err := database.NewInsertPipeline("IGNORE", "IGNORE", &final)
-		err = e.Load(&pipeline,
-			database.InsertIntoMoviesChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoLanguagesChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoKeywordsChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoGenresChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoCountriesChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoCompaniesChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoMovie2CompaniesChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoMovie2CountriesChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoMovie2GenresChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoMovie2KeywordsChunked(e.DB, &e.MaxBatchSize),
-			database.InsertIntoMovie2LanguagesChunked(e.DB, &e.MaxBatchSize),
-		)
+
+		mip, err := database.NewInsertPipeline(database.MovieInsertQuery, &final)
+		err = e.Load(&mip, database.InsertIntoMoviesChunked(e.DB, &e.MaxBatchSize))
 		if err != nil {
-			e.Logger.Fatalf("Loading failed: %v\n", err)
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
 		}
+
+		lip, err := database.NewInsertPipeline(database.LanguagesInsertQuery, &final)
+		err = e.Load(&lip, database.InsertIntoLanguagesChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		kip, err := database.NewInsertPipeline(database.KeywordsInsertQuery, &final)
+		err = e.Load(&kip, database.InsertIntoKeywordsChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		gip, err := database.NewInsertPipeline(database.GenreInsertQuery, &final)
+		err = e.Load(&gip, database.InsertIntoGenresChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		couip, err := database.NewInsertPipeline(database.CountryInsertQuery, &final)
+		err = e.Load(&couip, database.InsertIntoCountriesChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		comip, err := database.NewInsertPipeline(database.CompananyInsertQuery, &final)
+		err = e.Load(&comip, database.InsertIntoCompaniesChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		m2cip, err := database.NewInsertPipeline(database.Movie2CompaniesInsertQuery, &final)
+		err = e.Load(&m2cip, database.InsertIntoMovie2CompaniesChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		m2coip, err := database.NewInsertPipeline(database.Movie2CountriesInsertQuery, &final)
+		err = e.Load(&m2coip, database.InsertIntoCompaniesChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		m2gip, err := database.NewInsertPipeline(database.Movie2GenresInsertQuery, &final)
+		err = e.Load(&m2gip, database.InsertIntoMovie2GenresChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		m2kip, err := database.NewInsertPipeline(database.Movie2KeywordsInsertQuery, &final)
+		err = e.Load(&m2kip, database.InsertIntoMovie2KeywordsChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
+		m2lip, err := database.NewInsertPipeline(database.Movie2LanguagesInsertQuery, &final)
+		err = e.Load(&m2lip, database.InsertIntoMovie2LanguagesChunked(e.DB, &e.MaxBatchSize))
+		if err != nil {
+			e.Logger.Fatalf("Error while inserting: %v\n", err)
+		}
+
 		elapsed := time.Since(start)
-		e.Logger.Printf("Loading completed: %vs.\n", elapsed)
+		e.Logger.Printf("Loading completed: %v.\n", elapsed)
 	}
 	// v1 of api.
 	{

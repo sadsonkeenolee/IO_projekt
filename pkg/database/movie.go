@@ -14,8 +14,67 @@ import (
 )
 
 const (
-	TmdbDataLength        int = 20
-	TmdbCreditsDataLength int = 4
+	TmdbDataLength         int = 20
+	TmdbCreditsDataLength  int = 4
+	NMovieFields           int = 12
+	NLanguageFields        int = 2
+	NKeywordFields         int = 2
+	NGenreFields           int = 2
+	NCountryFields         int = 2
+	NCompanyFields         int = 2
+	NMovie2CompaniesFields int = 2
+	NMovie2LanguagesFields int = 2
+	NMovie2KeywordsFields  int = 2
+	NMovie2GenresFields    int = 2
+	NMovie2CountriesFields int = 2
+)
+
+var (
+	MovieInsertQuery Query = Query{
+		Content: "INSERT IGNORE INTO movies(budget,tmdb_id,title,overview,popularity,release_date,revenue,runtime,status,tagline,vote_average,vote_total) VALUES",
+		Fields:  "(?,?,?,?,?,?,?,?,?,?,?,?)",
+	}
+	LanguagesInsertQuery Query = Query{
+		Content: "INSERT IGNORE INTO languages(encoding, name) VALUES",
+		Fields:  "(?, ?)",
+	}
+	KeywordsInsertQuery Query = Query{
+		Content: "INSERT IGNORE INTO keywords(ID, name) VALUES",
+		Fields:  "(?, ?)",
+	}
+	GenreInsertQuery Query = Query{
+		Content: "INSERT IGNORE INTO genres(ID, name) VALUES",
+		Fields:  "(?, ?)",
+	}
+	CountryInsertQuery Query = Query{
+		Content: "INSERT IGNORE INTO countries(encoding, name) VALUES",
+		Fields:  "(?, ?)",
+	}
+	CompananyInsertQuery Query = Query{
+		Content: "INSERT IGNORE INTO companies(ID, name) VALUES",
+		Fields:  "(?, ?)",
+	}
+	Movie2LanguagesInsertQuery = Query{
+		Content: "INSERT IGNORE INTO movie2languages(movie_id, language_id) VALUES",
+		Fields:  "(?, ?)",
+	}
+	Movie2KeywordsInsertQuery = Query{
+		Content: "INSERT IGNORE INTO movie2keywords(movie_id, keyword_id) VALUES",
+		Fields:  "(?, ?)",
+	}
+	Movie2GenresInsertQuery = Query{
+		Content: "INSERT IGNORE INTO movie2genres(movie_id, genre_id) VALUES",
+		Fields:  "(?, ?)",
+	}
+	Movie2CountriesInsertQuery = Query{
+		Content: "INSERT IGNORE INTO movie2countries(movie_id, country_en) VALUES",
+		Fields:  "(?, ?)",
+	}
+
+	Movie2CompaniesInsertQuery = Query{
+		Content: "INSERT IGNORE INTO movie2companies(movie_id, company_id) VALUES",
+		Fields:  "(?, ?)",
+	}
 )
 
 type IdName struct {
@@ -134,24 +193,45 @@ func CastFromInsertableToMovieInsertable(item *Insertable) (*MovieInsertable, er
 	return mme, nil
 }
 
+func InsertStmt(db *sql.DB, stmt *string, argFields *[]any) error {
+	tx, err := db.Begin()
+	defer tx.Rollback()
+	if err != nil {
+		return err
+	}
+	_, _ = tx.Exec("set autocommit=0")
+	_, _ = tx.Exec("set unique_checks=0")
+	_, _ = tx.Exec("set foreign_key_checks=0")
+	_, _ = tx.Exec(*stmt, *argFields...)
+	_, _ = tx.Exec("set foreign_key_checks=1")
+	_, _ = tx.Exec("set unique_checks=1")
+	_, _ = tx.Exec("commit")
+	err = tx.Commit()
+	return err
+}
+
 func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) error {
 	idTracker := struct {
 		mu      sync.Mutex
 		idsSeen map[uint64]bool
 	}{idsSeen: make(map[uint64]bool)}
+
 	return func(i *Insertable) error {
 		ip, ok := (*i).(*InsertPipeline)
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
+
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO movies(budget,tmdb_id,title,overview,popularity,release_date,revenue,runtime,status,tagline,vote_average,vote_total) VALUES"
-		var queryField string = "(?,?,?,?,?,?,?,?,?,?,?,?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 12*(*chunkSize))
+					var argFields []any = make([]any, 0, NMovieFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
@@ -165,7 +245,7 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 						}
 						idTracker.idsSeen[mi.MovieId] = true
 						idTracker.mu.Unlock()
-						queryFields = append(queryFields, queryField)
+						queryFields = append(queryFields, ip.Fields)
 						argFields = append(argFields, mi.Budget)
 						argFields = append(argFields, mi.MovieId)
 						argFields = append(argFields, mi.Title)
@@ -179,60 +259,18 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 						argFields = append(argFields, mi.AverageScore)
 						argFields = append(argFields, mi.TotalScore)
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
 
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
+					// here put insert statements
+					<-c
+					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoMovies(db *sql.DB) func(data *Insertable) error {
-	movieIdsSeen := map[uint64]bool{}
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return err
-		}
-
-		if _, ok := movieIdsSeen[mme.MovieId]; ok {
-			return fmt.Errorf("element already added")
-		}
-
-		_, err = db.Exec("INSERT INTO movies(budget,tmdb_id,title,overview,popularity,release_date,revenue,runtime,status,tagline,vote_average,vote_total) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-			mme.Budget, mme.MovieId, mme.Title, mme.Overview, mme.Popularity,
-			mme.ReleaseDate, mme.Revenue, mme.Runtime, mme.Status, mme.Tagline,
-			mme.AverageScore, mme.TotalScore)
-
-		if err != nil {
-			return err
-		}
-
-		movieIdsSeen[mme.MovieId] = true
 		return nil
 	}
 }
@@ -247,14 +285,18 @@ func InsertIntoLanguagesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO languages(encoding, name) VALUES"
-		var queryField string = "(?, ?)"
+
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NLanguageFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
@@ -269,63 +311,21 @@ func InsertIntoLanguagesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 							}
 							encodingTracker.encodingsSeen[sl.Encoding] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, sl.Encoding)
 							argFields = append(argFields, sl.Name)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
-
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
+					<-c
+					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoLanguages(db *sql.DB) func(data *Insertable) error {
-	encodingsSeen := map[string]bool{}
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-
-		for _, sl := range mme.SpokenLanguages {
-			if _, ok := encodingsSeen[sl.Name]; ok {
-				continue
-			}
-
-			_, err := db.Exec("INSERT INTO languages(encoding, name) VALUES (?, ?)", sl.Encoding, sl.Name)
-			if err != nil {
-				return err
-			}
-			encodingsSeen[sl.Name] = true
-		}
 		return nil
 	}
 }
@@ -340,14 +340,17 @@ func InsertIntoKeywordsChunked(db *sql.DB, chunkSize *int) func(data *Insertable
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO keywords(ID, name) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NKeywordFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
@@ -362,62 +365,22 @@ func InsertIntoKeywordsChunked(db *sql.DB, chunkSize *int) func(data *Insertable
 							}
 							encodingTracker.keywordsSeen[k.Id] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, k.Id)
 							argFields = append(argFields, k.Name)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
 
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
-
+					<-c
+					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoKeywords(db *sql.DB) func(data *Insertable) error {
-	keywordsSeen := map[uint64]bool{}
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-
-		for _, k := range mme.Keywords {
-			if _, ok := keywordsSeen[k.Id]; ok {
-				continue
-			}
-			_, err := db.Exec("INSERT INTO keywords(ID, name) VALUES (?, ?)", k.Id, k.Name)
-			if err != nil {
-				return err
-			}
-			keywordsSeen[k.Id] = true
-		}
 		return nil
 	}
 }
@@ -432,14 +395,17 @@ func InsertIntoGenresChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO genres(ID, name) VALUES"
-		var queryField string = "(?, ?)"
+
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NGenreFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
@@ -454,62 +420,23 @@ func InsertIntoGenresChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 							}
 							encodingTracker.genresSeen[g.Id] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, g.Id)
 							argFields = append(argFields, g.Name)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
 
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
-
+					<-c
+					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
+
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoGenres(db *sql.DB) func(data *Insertable) error {
-	genresSeen := map[uint64]bool{}
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-
-		for _, g := range mme.Genres {
-			if _, ok := genresSeen[g.Id]; ok {
-				continue
-			}
-			_, err := db.Exec("INSERT INTO genres(ID, name) VALUES (?, ?)", g.Id, g.Name)
-			if err != nil {
-				return err
-			}
-			genresSeen[g.Id] = true
-		}
 		return nil
 	}
 }
@@ -524,14 +451,16 @@ func InsertIntoCountriesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO countries(encoding, name) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NCountryFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
@@ -546,61 +475,22 @@ func InsertIntoCountriesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 							}
 							encodingTracker.countriesSeen[pc.Encoding] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, pc.Encoding)
 							argFields = append(argFields, pc.Name)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
 
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
-
+					<-c
+					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoCountries(db *sql.DB) func(data *Insertable) error {
-	countrySeen := map[string]bool{}
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-		for _, c := range mme.ProductionCountries {
-			if _, ok := countrySeen[c.Name]; ok {
-				continue
-			}
-			_, err := db.Exec("INSERT INTO countries(encoding, name) VALUES (?, ?)", c.Encoding, c.Name)
-			if err != nil {
-				return err
-			}
-			countrySeen[c.Name] = true
-		}
 		return nil
 	}
 }
@@ -615,14 +505,17 @@ func InsertIntoCompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO companies(ID, name) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NCompanyFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
@@ -637,61 +530,22 @@ func InsertIntoCompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 							}
 							encodingTracker.companiesSeen[pc.Id] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, pc.Id)
 							argFields = append(argFields, pc.Name)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
-
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
+					<-c
+					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
+
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoCompanies(db *sql.DB) func(data *Insertable) error {
-	companiesSeen := map[uint64]bool{}
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-
-		for _, c := range mme.ProductionCompanies {
-			if _, ok := companiesSeen[c.Id]; ok {
-				continue
-			}
-			_, err := db.Exec("INSERT INTO companies(ID, name) VALUES (?, ?)", c.Id, c.Name)
-			if err != nil {
-				return err
-			}
-			companiesSeen[c.Id] = true
-		}
 		return nil
 	}
 }
@@ -702,69 +556,37 @@ func InsertIntoMovie2LanguagesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO movie2languages(movie_id, language_id) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NMovie2LanguagesFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
 							continue
 						}
 						for _, sl := range mi.SpokenLanguages {
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, sl.Encoding)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
-
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
+					<-c
+					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoMovie2Languages(db *sql.DB) func(data *Insertable) error {
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-		for _, sl := range mme.SpokenLanguages {
-			_, err := db.Exec("INSERT INTO movie2languages(movie_id, language_id) VALUES (?, ?)", mme.MovieId, sl.Encoding)
-			if err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 }
@@ -775,70 +597,38 @@ func InsertIntoMovie2KeywordsChunked(db *sql.DB, chunkSize *int) func(data *Inse
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
+
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO movie2keywords(movie_id, keyword_id) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NMovie2KeywordsFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
 							continue
 						}
 						for _, k := range mi.Keywords {
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, k.Id)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
-
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
+					<-c
+					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoMovie2Keywords(db *sql.DB) func(data *Insertable) error {
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-
-		for _, k := range mme.Keywords {
-			_, err := db.Exec("INSERT INTO movie2keywords(movie_id, keyword_id) VALUES (?, ?)", mme.MovieId, k.Id)
-			if err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 }
@@ -849,70 +639,37 @@ func InsertIntoMovie2GenresChunked(db *sql.DB, chunkSize *int) func(data *Insert
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO movie2genres(movie_id, genre_id) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NMovie2GenresFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
 							continue
 						}
 						for _, g := range mi.Genres {
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, g.Id)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
-
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
+					<-c
+					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoMovie2Genres(db *sql.DB) func(data *Insertable) error {
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-
-		for _, g := range mme.Genres {
-			_, err := db.Exec("INSERT INTO movie2genres(movie_id, genre_id) VALUES (?, ?)", mme.MovieId, g.Id)
-			if err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 }
@@ -923,70 +680,38 @@ func InsertIntoMovie2CountriesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO movie2countries(movie_id, country_en) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NMovie2CountriesFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
 							continue
 						}
 						for _, pc := range mi.ProductionCountries {
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, pc.Encoding)
 						}
 					}
-					stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-					tx, err := db.Begin()
-					if err != nil {
-						return
-					}
-					restarts := 0
-					defer tx.Rollback()
-
-					for restarts < 3 {
-						_, err := tx.Exec(stmt, argFields...)
-						if err != nil {
-							if SqlErrorCode(err) == 1213 {
-								time.Sleep(time.Second * 10)
-								continue
-							} else {
-								restarts++
-								time.Sleep(time.Second * 15)
-							}
-						}
-						tx.Commit()
-						break
-					}
+					<-c
+					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						fmt.Println(err)
 					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoMovie2Countries(db *sql.DB) func(data *Insertable) error {
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-
-		for _, pc := range mme.ProductionCountries {
-			_, err := db.Exec("INSERT INTO movie2countries(movie_id, country_en) VALUES (?, ?)", mme.MovieId, pc.Encoding)
-			if err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 }
@@ -997,70 +722,38 @@ func InsertIntoMovie2CompaniesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 		if !ok {
 			return fmt.Errorf("invalid interface (not a InsertPipeline)")
 		}
+
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
 		var wg sync.WaitGroup
-		var query string = "INSERT IGNORE INTO movie2companies(movie_id, company_id) VALUES"
-		var queryField string = "(?, ?)"
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
 					var queryFields []string = make([]string, 0, *chunkSize)
-					var argFields []interface{} = make([]interface{}, 0, 2*(*chunkSize))
+					var argFields []any = make([]any, 0, NMovie2CompaniesFields*(*chunkSize))
 					for _, item := range chunk {
 						mi, ok := (*item).(*MovieInsertable)
 						if !ok {
 							continue
 						}
 						for _, pc := range mi.ProductionCompanies {
-							queryFields = append(queryFields, queryField)
+							queryFields = append(queryFields, ip.Fields)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, pc.Id)
 						}
-						stmt := fmt.Sprintf("%v %v", query, strings.Join(queryFields, ","))
-						tx, err := db.Begin()
-						if err != nil {
-							return
-						}
-						restarts := 0
-						defer tx.Rollback()
-
-						for restarts < 3 {
-							_, err := tx.Exec(stmt, argFields...)
-							if err != nil {
-								if SqlErrorCode(err) == 1213 {
-									time.Sleep(time.Second * 10)
-									continue
-								} else {
-									restarts++
-									time.Sleep(time.Second * 15)
-								}
-							}
-							tx.Commit()
-							break
-						}
-
-						if err != nil {
-							fmt.Println(err)
-						}
 					}
+					<-c
+					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
+					if err != nil {
+						fmt.Println(err)
+					}
+					c <- true
 				})
 		}
 		wg.Wait()
-		return nil
-	}
-}
-
-func InsertIntoMovie2Companies(db *sql.DB) func(data *Insertable) error {
-	return func(data *Insertable) error {
-		mme, err := CastFromInsertableToMovieInsertable(data)
-		if err != nil {
-			return fmt.Errorf("invalid interface")
-		}
-		for _, pc := range mme.ProductionCompanies {
-			_, err := db.Exec("INSERT INTO movie2companies(movie_id, company_id) VALUES (?, ?)", mme.MovieId, pc.Id)
-			if err != nil {
-				return err
-			}
-		}
 		return nil
 	}
 }

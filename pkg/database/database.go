@@ -1,9 +1,13 @@
 package database
 
-import "fmt"
+import (
+	"database/sql"
+	"fmt"
+)
 
 const (
-	ItemNotFound string = "No information"
+	ItemNotFound    string = "no information"
+	InvalidPipeline string = "invalid interface (no InsertPipeline)"
 )
 
 type DatasetFileMetadata struct {
@@ -14,19 +18,24 @@ type DatasetFileMetadata struct {
 	ReadAt    *string
 }
 
+// Query defines reusable data structure for making database queries
+type Query struct {
+	Content string
+	Fields  string
+}
+
 // InsertPipeline defines pipeline for inserting elements to the given database.
 type InsertPipeline struct {
-	Query   string
-	Fields  string
+	Query
 	Tracker int
 	Data    *[]*Insertable
 }
 
-func NewInsertPipeline(query, fields string, data *[]*Insertable) (Insertable, error) {
-	if len(query) == 0 {
+func NewInsertPipeline(q Query, data *[]*Insertable) (Insertable, error) {
+	if len(q.Content) == 0 {
 		return nil, fmt.Errorf("incorrect query (length 0)")
 	}
-	if len(fields) == 0 {
+	if len(q.Fields) == 0 {
 		return nil, fmt.Errorf("incorrect fields (length 0)")
 	}
 	if len(*data) == 0 {
@@ -34,8 +43,7 @@ func NewInsertPipeline(query, fields string, data *[]*Insertable) (Insertable, e
 	}
 
 	return &InsertPipeline{
-		Query:   query,
-		Fields:  fields,
+		Query:   q,
 		Tracker: 0,
 		Data:    data,
 	}, nil
