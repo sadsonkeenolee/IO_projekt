@@ -62,7 +62,7 @@ class RecommendedResponse(BaseModel):
 class FeedbackRequest(BaseModel):
   user_id: int
   item_id: int
-  item_type = ItemType
+  item_type: ItemType
   event: str
   score_shown: Optional[float] = None
 
