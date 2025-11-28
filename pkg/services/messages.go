@@ -1,9 +1,8 @@
 package services
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
+	"net/http"
 )
 
 // UserCore implements very basic info about user. Username and Password are
@@ -35,6 +34,10 @@ type CredentialsCoreResponse struct {
 	TokenType   string `json:"token_type"`
 	ExpiresIn   uint32 `json:"expires_in"`
 	Message     any    `json:"message"`
+}
+
+type TvResponse struct {
+	Content []any
 }
 
 const (

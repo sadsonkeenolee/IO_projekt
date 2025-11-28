@@ -16,7 +16,7 @@ import (
 const (
 	TmdbDataLength         int = 20
 	TmdbCreditsDataLength  int = 4
-	NMovieFields           int = 12
+	NMovieFields           int = 13
 	NLanguageFields        int = 2
 	NKeywordFields         int = 2
 	NGenreFields           int = 2
@@ -31,8 +31,8 @@ const (
 
 var (
 	MovieInsertQuery Query = Query{
-		Content: "INSERT IGNORE INTO movies(budget,tmdb_id,title,overview,popularity,release_date,revenue,runtime,status,tagline,vote_average,vote_total) VALUES",
-		Fields:  "(?,?,?,?,?,?,?,?,?,?,?,?)",
+		Content: "INSERT IGNORE INTO movies(budget,tmdb_id,original_lang_id,title,overview,popularity,release_date,revenue,runtime,status,tagline,vote_average,vote_total) VALUES",
+		Fields:  "(?,?,?,?,?,?,?,?,?,?,?,?,?)",
 	}
 	LanguagesInsertQuery Query = Query{
 		Content: "INSERT IGNORE INTO languages(encoding, name) VALUES",
@@ -199,15 +199,29 @@ func InsertStmt(db *sql.DB, stmt *string, argFields *[]any) error {
 	if err != nil {
 		return err
 	}
-	_, _ = tx.Exec("set autocommit=0")
-	_, _ = tx.Exec("set unique_checks=0")
-	_, _ = tx.Exec("set foreign_key_checks=0")
-	_, _ = tx.Exec(*stmt, *argFields...)
-	_, _ = tx.Exec("set foreign_key_checks=1")
-	_, _ = tx.Exec("set unique_checks=1")
-	_, _ = tx.Exec("commit")
-	err = tx.Commit()
-	return err
+	if _, err = tx.Exec("set autocommit=0"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("set unique_checks=0"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("set foreign_key_checks=0"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(*stmt, *argFields...); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("set foreign_key_checks=1"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("set unique_checks=0"); err != nil {
+		return err
+	}
+	if _, err = tx.Exec("commit"); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) error {
@@ -248,6 +262,7 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 						queryFields = append(queryFields, ip.Fields)
 						argFields = append(argFields, mi.Budget)
 						argFields = append(argFields, mi.MovieId)
+						argFields = append(argFields, mi.OriginalLanguage)
 						argFields = append(argFields, mi.Title)
 						argFields = append(argFields, mi.Overview)
 						argFields = append(argFields, mi.Popularity)
@@ -717,6 +732,48 @@ func InsertIntoMovie2CountriesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 }
 
 func InsertIntoMovie2CompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) error {
+	return func(i *Insertable) error {
+		ip, ok := (*i).(*InsertPipeline)
+		if !ok {
+			return fmt.Errorf("invalid interface (not a InsertPipeline)")
+		}
+
+		// prevent deadlocks
+		c := make(chan bool, 1)
+		defer close(c)
+		c <- true
+		var wg sync.WaitGroup
+		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
+			wg.Go(
+				func() {
+					var queryFields []string = make([]string, 0, *chunkSize)
+					var argFields []any = make([]any, 0, NMovie2CompaniesFields*(*chunkSize))
+					for _, item := range chunk {
+						mi, ok := (*item).(*MovieInsertable)
+						if !ok {
+							continue
+						}
+						for _, pc := range mi.ProductionCompanies {
+							queryFields = append(queryFields, ip.Fields)
+							argFields = append(argFields, mi.MovieId)
+							argFields = append(argFields, pc.Id)
+						}
+					}
+					<-c
+					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					err := InsertStmt(db, &stmt, &argFields)
+					if err != nil {
+						fmt.Println(err)
+					}
+					c <- true
+				})
+		}
+		wg.Wait()
+		return nil
+	}
+}
+
+func UpdateLanguageForMovies(db *sql.DB, chunkSize *int) func(data *Insertable) error {
 	return func(i *Insertable) error {
 		ip, ok := (*i).(*InsertPipeline)
 		if !ok {

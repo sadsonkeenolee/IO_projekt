@@ -157,7 +157,7 @@ func (e *Etl) Start() error {
 		e.State = services.StateIdle
 	}
 
-	if err == nil && dfms != nil {
+	if err == nil && len(dfms) != 0 {
 		// Extract data here
 		e.Logger.Println("Extracting data for the first ever setup...")
 		path1 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_movies.csv")
@@ -248,6 +248,12 @@ func (e *Etl) Start() error {
 
 		elapsed := time.Since(start)
 		e.Logger.Printf("Loading completed: %v.\n", elapsed)
+		// FIXME: Ten kod powoduje, ze update zajmuje za duzo czasu
+		// _, err = e.DB.Exec(`update read_table set is_read=1,
+		// read_at=current_timestamp where is_read=0`)
+		// if err != nil {
+		// 	e.Logger.Println(err)
+		// }
 	}
 	// v1 of api.
 	{

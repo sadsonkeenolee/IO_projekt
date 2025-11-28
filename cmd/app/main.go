@@ -10,6 +10,7 @@ import (
 	"github.com/sadsonkeenolee/IO_projekt/internal/services/credentials"
 	_ "github.com/sadsonkeenolee/IO_projekt/internal/services/credentials"
 	"github.com/sadsonkeenolee/IO_projekt/internal/services/etl"
+	"github.com/sadsonkeenolee/IO_projekt/internal/services/fetch"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 )
@@ -25,11 +26,13 @@ var serviceFlag = flag.String("service", "credentials", "specify which service t
 const (
 	Credentials = iota
 	Etl
+	Fetch
 )
 
 var serviceMap = map[string]uint{
 	"credentials": Credentials,
 	"etl":         Etl,
+	"fetch":       Fetch,
 }
 
 func main() {
@@ -57,6 +60,8 @@ func main() {
 		migrationsPath, err = filepath.Abs("api/migrations/credentials")
 	case Etl:
 		migrationsPath, err = filepath.Abs("api/migrations/etl")
+	case Fetch:
+		migrationsPath, err = filepath.Abs("api/migrations/fetch")
 	}
 
 	if err != nil {
@@ -71,6 +76,9 @@ func main() {
 	case Etl:
 		_ = os.Setenv("ETL_CONFIG_DIR_PATH", configsPath)
 		_ = os.Setenv("ETL_MIGRATIONS_DIR_PATH", migrationsPath)
+	case Fetch:
+		_ = os.Setenv("FETCH_CONFIG_DIR_PATH", configsPath)
+		_ = os.Setenv("FETCH_MIGRATIONS_DIR_PATH", migrationsPath)
 	}
 
 	var s services.IService
@@ -79,6 +87,8 @@ func main() {
 		s, _ = credentials.NewCredentials()
 	case Etl:
 		s, _ = etl.NewEtl(1000)
+	case Fetch:
+		s, _ = fetch.NewFetch()
 	}
 
 	if *migrateFlag {

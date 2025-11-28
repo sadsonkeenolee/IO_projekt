@@ -74,4 +74,4 @@ DEFAULT CHARSET=utf8mb4
 COLLATE=utf8mb4_0900_ai_ci;
 
 ALTER TABLE movies
-	ADD CONSTRAINT FOREIGN KEY(original_lang_id) REFERENCES languages(encoding);
+	ADD CONSTRAINT FK_OriginalLangId FOREIGN KEY(original_lang_id) REFERENCES languages(encoding);
