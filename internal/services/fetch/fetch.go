@@ -2,6 +2,7 @@ package fetch
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -11,7 +12,6 @@ import (
 	"database/sql"
 
 	"github.com/gin-gonic/gin"
-	gsdmysql "github.com/go-sql-driver/mysql"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 	"github.com/spf13/viper"
@@ -22,56 +22,87 @@ type Fetch struct {
 }
 
 type Id struct {
-	Content int `uri:"id" binding:"required"`
+	Content uint64 `uri:"id" binding:"required"`
 }
 
 type Title struct {
 	Content string `uri:"title" binding:"required"`
 }
 
-func NewFetch() (services.IService, error) {
-	f := Fetch{}
-	l := log.New(os.Stdout, "Fetch: ", log.LstdFlags)
-	f.Logger = l
-	f.Router = gin.Default()
+var FetchLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
 
-	v, err := f.SetConfig()
-	if err != nil {
-		f.Logger.Printf("Error: %v.\n", err)
-		f.Logger.Println("Service goes into `Idle mode`.")
-		f.Logger.Println("Please note the service configuration is incomplete.")
-		f.ConfigReader = nil
-		f.State = services.StateIdle
-		return &f, err
+func WithLogger(out io.Writer, prefix string, flags int) func(f *Fetch) {
+	return func(f *Fetch) {
+		if flags&log.Llongfile == log.Llongfile {
+			FetchLogger.Fatalln("log.Llongfile flag is not allowed for the service purposes.")
+		}
+		if out == os.Stderr {
+			FetchLogger.Fatalln("`os.Stderr` io.Writer is not allowed for the service purposes.")
+		}
+		f.Logger = log.New(out, prefix, flags)
 	}
-	f.ConfigReader = v
+}
 
-	var ci services.ConnInfo
-	if err := f.ConfigReader.UnmarshalKey("ConnInfo", &ci); err != nil {
-		l.Fatalln(err)
+func WithRouter(opts ...gin.OptionFunc) func(f *Fetch) {
+	return func(f *Fetch) {
+		f.Router = gin.Default(opts...)
 	}
+}
 
-	f.ConnInfo = &ci
-	cfg := gsdmysql.NewConfig()
-	cfg.User = ci.Username
-	cfg.Passwd = ci.Password
-	cfg.Net = "tcp"
-	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
-	cfg.DBName = ci.Name
+func WithConfig(filename, ext string, cfgPaths ...string) func(f *Fetch) {
+	return func(f *Fetch) {
+		v := viper.New()
+		v.SetConfigName(filename)
+		v.SetConfigType(ext)
+		for _, cfgPath := range cfgPaths {
+			v.AddConfigPath(cfgPath)
+		}
 
-	db, err := sql.Open(ci.Type, fmt.Sprintf("%v?multiStatements=true&parseTime=true", cfg.FormatDSN()))
-	if err != nil {
-		f.Logger.Printf("Error: %v.\n", err)
-		f.Logger.Println("Service goes into `Idle mode`.")
-		f.Logger.Println("Please note the service configuration is incomplete.")
-		f.State = services.StateIdle
-		return &f, err
+		if err := v.ReadInConfig(); err != nil {
+			FetchLogger.Fatalf("Got error while parsing config file: %v\n", err)
+		}
+		f.ConfigReader = v
 	}
-	f.DB = db
-	return &f, nil
+}
+
+func WithConnectionInfo(tableName string) func(f *Fetch) {
+	return func(f *Fetch) {
+		if f.ConfigReader == nil {
+			FetchLogger.Fatalln("Before parsing a connection info, initialize your config reader.")
+		}
+
+		var ci services.ConnInfo
+		if err := f.ConfigReader.UnmarshalKey(tableName, &ci); err != nil {
+			FetchLogger.Fatalf("Got error while unmarshalling: %v\n", err)
+		}
+		f.ConnInfo = &ci
+	}
+}
+
+// TODO: Add additional parameters
+func WithDatabase() func(f *Fetch) {
+	return func(f *Fetch) {
+		cfgParsed := database.ParseDriverConfig(f.ConnInfo)
+		db, err := sql.Open(f.ConnInfo.Type, fmt.Sprintf("%v?parseTime=true", cfgParsed.FormatDSN()))
+		if err != nil {
+			FetchLogger.Fatalf("Got error while creating a database driver: %v\n", err)
+		}
+		f.DB = db
+	}
+}
+
+func FetchBuilder(opts ...func(*Fetch)) services.IService {
+	f := &Fetch{}
+	for _, opt := range opts {
+		opt(f)
+	}
+	return f
 }
 
 func (f *Fetch) Start() error {
+	if err := f.HealthCheck(); err != nil {
+		FetchLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
+	}
 	// v1 of api.
 	{
 		v1 := f.Router.Group("/v1")
@@ -101,6 +132,30 @@ func (f *Fetch) Start() error {
 	return fmt.Errorf("server closed")
 }
 
+func (f *Fetch) HealthCheck() error {
+	if f.Logger == nil {
+		return fmt.Errorf("No logger setup")
+	}
+
+	if f.Router == nil {
+		return fmt.Errorf("No router setup")
+	}
+
+	if f.DB == nil {
+		return fmt.Errorf("No database setup")
+	}
+
+	if f.ConnInfo == nil {
+		return fmt.Errorf("No connection info setup")
+	}
+
+	if f.ConfigReader == nil {
+		return fmt.Errorf("No config setup")
+	}
+
+	return nil
+}
+
 func (f *Fetch) TvByTitle(ctx *gin.Context) {
 	bind := Title{Content: ""}
 	if err := ctx.ShouldBindUri(&bind); err != nil {
@@ -118,13 +173,12 @@ func (f *Fetch) TvByTitle(ctx *gin.Context) {
 		title, overview, popularity, release_date, revenue, runtime, status, 
 		tagline, vote_average, vote_total FROM movies WHERE title LIKE ?`, "%"+bind.Content+"%")
 	if err != nil {
-		f.Logger.Println(err)
-		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		f.Logger.Printf("couldn't find a movie with title=%v\n", bind.Content)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
 		return
 	}
 	defer rows.Close()
 	mqs := []database.MovieQueryable{}
-	// TODO: Dodac parsowanie reszty pol
 	for rows.Next() {
 		var mq database.MovieQueryable
 		if err := rows.Scan(
@@ -137,23 +191,14 @@ func (f *Fetch) TvByTitle(ctx *gin.Context) {
 		}
 		mqs = append(mqs, mq)
 	}
-	ctx.JSON(
-		http.StatusFound,
-		gin.H{
-			"content": mqs,
-		})
+	services.NewGoodContentRequest(ctx, mqs)
 }
 
 func (f *Fetch) TvById(ctx *gin.Context) {
-	bind := Id{-1}
+	bind := Id{}
 	if err := ctx.ShouldBindUri(&bind); err != nil {
 		f.Logger.Println(err)
-		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
-		return
-	}
-	if bind.Content == -1 {
-		f.Logger.Println("couldn't parse id")
-		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
 		return
 	}
 
@@ -161,41 +206,33 @@ func (f *Fetch) TvById(ctx *gin.Context) {
 		title, overview, popularity, release_date, revenue, runtime, status, 
 		tagline, vote_average, vote_total  FROM movies WHERE ID=?`, bind.Content)
 	if err != nil {
-		f.Logger.Println(err)
-		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		f.Logger.Printf("couldn't find a movie with ID=%v\n", bind.Content)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
 		return
 	}
+	var mq database.MovieQueryable
 	defer rows.Close()
-	mqs := []database.MovieQueryable{}
-	// TODO: Dodac parsowanie reszty pol
+	// load the row
+
 	for rows.Next() {
-		var mq database.MovieQueryable
 		if err := rows.Scan(
 			&mq.Id, &mq.Budget, &mq.MovieId, &mq.OriginalLanguage,
 			&mq.Title, &mq.Overview, &mq.Popularity, &mq.ReleaseDate,
 			&mq.Revenue, &mq.Runtime, &mq.Status, &mq.Tagline, &mq.AverageScore,
 			&mq.TotalScore); err != nil {
 			f.Logger.Println(err)
-			continue
+			services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+			return
 		}
-		mqs = append(mqs, mq)
 	}
-	ctx.JSON(
-		http.StatusFound,
-		gin.H{
-			"content": mqs,
-		})
-}
 
-func (f *Fetch) SetConfig() (*viper.Viper, error) {
-	v := viper.New()
-	v.SetConfigName("FetchConfig")
-	v.SetConfigType("toml")
-	v.AddConfigPath(os.Getenv("FETCH_CONFIG_DIR_PATH"))
-	if err := v.ReadInConfig(); err != nil {
-		return nil, err
+	if mq.Id != bind.Content {
+		f.Logger.Printf("id (%v) mismatches the found id (%v)\n",
+			bind.Content, mq.Id)
+		services.NewBadContentRequest(ctx, "movie doesn't exist")
+		return
 	}
-	return v, nil
+	services.NewGoodContentRequest(ctx, mq)
 }
 
 // ExposeConnInfo exposes configuration.

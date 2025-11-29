@@ -5,6 +5,7 @@ package credentials
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
-	gsdmysql "github.com/go-sql-driver/mysql"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/gin-gonic/gin"
@@ -23,9 +23,12 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/mysql"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/github"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
 
+// Use it as global logger that will log everything that happens globally
+var CredentialsLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
 var SecretTokenKey = []byte("bardzo_tajny_token_nie_udostepniac")
 
 const (
@@ -36,49 +39,77 @@ type Credentials struct {
 	services.Service
 }
 
-// NewCredentials creates Service from configuration file.
-func NewCredentials() (services.IService, error) {
-	c := Credentials{}
-	l := log.New(os.Stdout, "Credentials: ", log.LstdFlags)
-	c.Logger = l
-	c.Router = gin.Default()
-
-	v, err := c.SetConfig()
-	if err != nil {
-		c.Logger.Printf("Error: %v.\n", err)
-		c.Logger.Println("Service goes into `Idle mode`.")
-		c.Logger.Println("Please note the service configuration is incomplete.")
-		c.ConfigReader = nil
-		c.State = services.StateIdle
-		return &c, err
+func WithLogger(out io.Writer, prefix string, flags int) func(c *Credentials) {
+	return func(c *Credentials) {
+		if flags&log.Llongfile == log.Llongfile {
+			CredentialsLogger.Fatalln("`log.Llongfile` flag is not allowed for the service purposes.")
+		}
+		if out == os.Stderr {
+			CredentialsLogger.Fatalln("`os.Stderr` io.Writer is not allowed for the service purposes.")
+		}
+		c.Logger = log.New(out, prefix, flags)
 	}
-	c.ConfigReader = v
+}
 
-	var ci services.ConnInfo
-	if err := c.ConfigReader.UnmarshalKey("ConnInfo", &ci); err != nil {
-		fmt.Println(err)
+func WithRouter(opts ...gin.OptionFunc) func(c *Credentials) {
+	return func(c *Credentials) {
+		c.Router = gin.Default(opts...)
 	}
-	c.ConnInfo = &ci
-	cfg := gsdmysql.NewConfig()
-	cfg.User = ci.Username
-	cfg.Passwd = ci.Password
-	cfg.Net = "tcp"
-	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
-	cfg.DBName = ci.Name
+}
 
-	db, err := sql.Open(ci.Type, cfg.FormatDSN())
-	if err != nil {
-		c.Logger.Printf("Error: %v.\n", err)
-		c.Logger.Println("Service goes into `Idle mode`.")
-		c.Logger.Println("Please note the service configuration is incomplete.")
-		c.State = services.StateIdle
-		return &c, err
+func WithConfig(filename, ext string, cfgPaths ...string) func(c *Credentials) {
+	return func(c *Credentials) {
+		v := viper.New()
+		v.SetConfigName(filename)
+		v.SetConfigType(ext)
+		for _, cfgPath := range cfgPaths {
+			v.AddConfigPath(cfgPath)
+		}
+
+		if err := v.ReadInConfig(); err != nil {
+			CredentialsLogger.Fatalf("Got error while parsing config file: %v\n", err)
+		}
+		c.ConfigReader = v
 	}
-	c.DB = db
-	return &c, nil
+}
+
+func WithConnectionInfo(tableName string) func(c *Credentials) {
+	return func(c *Credentials) {
+		if c.ConfigReader == nil {
+			CredentialsLogger.Fatalln("Before parsing a connection info, initialize your config reader.")
+		}
+
+		var ci services.ConnInfo
+		if err := c.ConfigReader.UnmarshalKey(tableName, &ci); err != nil {
+			CredentialsLogger.Fatalf("Got error while unmarshalling: %v\n", err)
+		}
+		c.ConnInfo = &ci
+	}
+}
+
+func WithDatabase() func(c *Credentials) {
+	return func(c *Credentials) {
+		cfgParsed := database.ParseDriverConfig(c.ConnInfo)
+		db, err := sql.Open(c.ConnInfo.Type, cfgParsed.FormatDSN())
+		if err != nil {
+			CredentialsLogger.Fatalf("Got error while creating a database driver: %v\n", err)
+		}
+		c.DB = db
+	}
+}
+
+func CredentialsBuilder(opts ...func(*Credentials)) services.IService {
+	c := &Credentials{}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 func (c *Credentials) Start() error {
+	if err := c.HealthCheck(); err != nil {
+		CredentialsLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
+	}
 	// v1 of api.
 	{
 		v1 := c.Router.Group("/v1")
@@ -102,17 +133,6 @@ func (c *Credentials) Start() error {
 	return fmt.Errorf("server closed")
 }
 
-func (c *Credentials) SetConfig() (*viper.Viper, error) {
-	v := viper.New()
-	v.SetConfigName("CredentialsConfig")
-	v.SetConfigType("toml")
-	v.AddConfigPath(os.Getenv("CREDENTIALS_CONFIG_DIR_PATH"))
-	if err := v.ReadInConfig(); err != nil {
-		return nil, err
-	}
-	return v, nil
-}
-
 // validateUser extracts password from database and checks if the user exists.
 // Then two password are compared to each other - if success, nil is returned.
 func (c *Credentials) validateUser(fetchedPassword, requestPassword []byte) error {
@@ -122,25 +142,48 @@ func (c *Credentials) validateUser(fetchedPassword, requestPassword []byte) erro
 	return nil
 }
 
+func (c *Credentials) HealthCheck() error {
+	if c.Logger == nil {
+		return fmt.Errorf("No logger setup")
+	}
+
+	if c.Router == nil {
+		return fmt.Errorf("No router setup")
+	}
+
+	if c.DB == nil {
+		return fmt.Errorf("No database setup")
+	}
+
+	if c.ConnInfo == nil {
+		return fmt.Errorf("No connection info setup")
+	}
+
+	if c.ConfigReader == nil {
+		return fmt.Errorf("No config setup")
+	}
+	return nil
+}
+
 // OnUserLogin implements logic for logging.
 func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 	var ulr services.UserLoginRequest
 	if err := ctx.ShouldBindJSON(&ulr); err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.JsonParsing, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
 
 	requestedUsername, ok := ulr.Username.(string)
 	if !ok {
-		c.Logger.Printf("username (%v) field has invalid type\n", ulr.Username)
+		c.Logger.Printf(services.UsernameParsing, ulr.Username)
 		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	requestedPassword, ok := ulr.Password.(string)
 	if !ok {
-		c.Logger.Printf("password (%v) field has invalid type\n", ulr.Password)
+		c.Logger.Printf(services.PasswordParsing, ulr.Password)
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
@@ -148,20 +191,20 @@ func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 	requestedPasswordInBytes := []byte(requestedPassword)
 	user, err := c.FetchUser(&requestedUsername)
 	if err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.InvalidFetching, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
 		return
 	}
 
 	fetchedPasswordInBytes, ok := user.Password.([]byte)
 	if !ok {
-		c.Logger.Printf("password (%v) can't be casted into bytes\n", user.Password)
+		c.Logger.Printf(services.PasswordParsing, user.Password)
 		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	if err := c.validateUser(fetchedPasswordInBytes, requestedPasswordInBytes); err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.InvalidUserValidation, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
 		return
 	}
@@ -178,20 +221,20 @@ func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	var u services.UserRegisterRequest
 	if err := ctx.ShouldBindJSON(&u); err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.JsonParsing, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
 
 	username, ok := u.Username.(string)
 	if !ok {
-		c.Logger.Printf("username (%v) field has invalid type\n", u.Username)
+		c.Logger.Printf(services.UsernameParsing, u.Username)
 		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	if _, err := c.FetchUser(&username); err == nil {
-		c.Logger.Printf("user `%v` exists.\n", username)
+		c.Logger.Printf("User `%v` exists.\n", username)
 		// IMPORTANT: To prevent some bad actors, don't inform a user about it.
 		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
 		return
@@ -202,21 +245,21 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	defer tx.Rollback()
 
 	if err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.TransactionProblem, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	requestPassword, ok := u.Password.(string)
 	if !ok {
-		c.Logger.Printf("password (%v) field couldn't be casted to string\n", u.Password)
+		c.Logger.Printf(services.PasswordParsing, u.Password)
 		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(requestPassword), 10)
 	if err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf("Couldn't hash the password: %v\n", requestPassword)
 		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
 		return
 	}
@@ -224,7 +267,7 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	passwordStringified := string(hashedPassword)
 	res, err := tx.Exec(`INSERT INTO user_credentials(username, password, email) VALUES (?, ?, ?)`, u.Username, passwordStringified, u.Email)
 	if err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.TransactionProblem, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
 		return
 	}
@@ -232,13 +275,13 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	id, _ := res.LastInsertId()
 	_, err = tx.Exec(`INSERT INTO user_identity(ID, birthday, gender) VALUES (?, ?, ?)`, id, u.Birthday, u.Gender)
 	if err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.TransactionProblem, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		c.Logger.Println(err)
+		c.Logger.Printf(services.TransactionProblem, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
 		return
 	}

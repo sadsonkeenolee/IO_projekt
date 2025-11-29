@@ -3,6 +3,7 @@ package etl
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,12 +15,14 @@ import (
 	"database/sql"
 
 	"github.com/gin-gonic/gin"
-	gsdmysql "github.com/go-sql-driver/mysql"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 	"github.com/spf13/viper"
 )
+
+// Use it as global logger that will log everything that happens globally
+var EtlLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
 
 type ExtractFunc = func(*[]string, *database.Insertable) error
 type TransformFunc = func(*[]*database.Insertable, *[]*database.Insertable, *[]*database.Insertable) error
@@ -30,51 +33,85 @@ type Etl struct {
 	MaxBatchSize int
 }
 
-func NewEtl(maxBatchSize int) (services.IService, error) {
-	e := Etl{}
-	l := log.New(os.Stdout, "Etl: ", log.LstdFlags)
-	e.Logger = l
-	e.Router = gin.Default()
-
-	v, err := e.SetConfig()
-	if err != nil {
-		e.Logger.Printf("Error: %v.\n", err)
-		e.Logger.Println("Service goes into `Idle mode`.")
-		e.Logger.Println("Please note the service configuration is incomplete.")
-		e.ConfigReader = nil
-		e.State = services.StateIdle
-		return &e, err
+func WithLogger(out io.Writer, prefix string, flags int) func(e *Etl) {
+	return func(e *Etl) {
+		if flags&log.Llongfile == log.Llongfile {
+			EtlLogger.Fatalln("`log.Llongfile` flag is not allowed for the service purposes.")
+		}
+		if out == os.Stderr {
+			EtlLogger.Fatalln("`os.Stderr` io.Writer is not allowed for the service purposes.")
+		}
+		e.Logger = log.New(out, prefix, flags)
 	}
-	e.ConfigReader = v
+}
 
-	var ci services.ConnInfo
-	if err := e.ConfigReader.UnmarshalKey("ConnInfo", &ci); err != nil {
-		l.Fatalln(err)
+func WithRouter(opts ...gin.OptionFunc) func(e *Etl) {
+	return func(e *Etl) {
+		e.Router = gin.Default(opts...)
 	}
+}
 
-	e.ConnInfo = &ci
-	cfg := gsdmysql.NewConfig()
-	cfg.User = ci.Username
-	cfg.Passwd = ci.Password
-	cfg.Net = "tcp"
-	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
-	cfg.DBName = ci.Name
+func WithConfig(filename, ext string, cfgPaths ...string) func(e *Etl) {
+	return func(e *Etl) {
+		v := viper.New()
+		v.SetConfigName(filename)
+		v.SetConfigType(ext)
+		for _, cfgPath := range cfgPaths {
+			v.AddConfigPath(cfgPath)
+		}
 
-	db, err := sql.Open(ci.Type, fmt.Sprintf("%v?multiStatements=true", cfg.FormatDSN()))
-	if err != nil {
-		e.Logger.Printf("Error: %v.\n", err)
-		e.Logger.Println("Service goes into `Idle mode`.")
-		e.Logger.Println("Please note the service configuration is incomplete.")
-		e.State = services.StateIdle
-		return &e, err
+		if err := v.ReadInConfig(); err != nil {
+			EtlLogger.Fatalf("Got error while parsing config file: %v\n", err)
+		}
+		e.ConfigReader = v
 	}
-	e.DB = db
-	e.MaxBatchSize = maxBatchSize
-	return &e, nil
+}
+
+func WithConnectionInfo(tableName string) func(e *Etl) {
+	return func(e *Etl) {
+		if e.ConfigReader == nil {
+			EtlLogger.Fatalln("Before parsing a connection info, initialize your config reader.")
+		}
+
+		var ci services.ConnInfo
+		if err := e.ConfigReader.UnmarshalKey(tableName, &ci); err != nil {
+			EtlLogger.Fatalf("Got error while unmarshalling: %v\n", err)
+		}
+		e.ConnInfo = &ci
+	}
+}
+
+func WithDatabase() func(e *Etl) {
+	return func(e *Etl) {
+		cfgParsed := database.ParseDriverConfig(e.ConnInfo)
+		db, err := sql.Open(e.ConnInfo.Type, cfgParsed.FormatDSN())
+		if err != nil {
+			EtlLogger.Fatalf("Got error while creating a database driver: %v\n", err)
+		}
+		e.DB = db
+	}
+}
+
+func WithBatchSize(n int) func(e *Etl) {
+	return func(e *Etl) {
+		if n < 0 {
+			EtlLogger.Fatalf("Got batch size of size (%v), expected n > 0", n)
+		}
+		e.MaxBatchSize = n
+	}
+}
+
+func EtlBuilder(opts ...func(*Etl)) services.IService {
+	e := &Etl{}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 func (e *Etl) IsDataExtracted() ([]*database.DatasetFileMetadata, error) {
-	rows, err := e.DB.Query(`SELECT directory, data_type, is_read, created_at, read_at FROM read_table`)
+	rows, err := e.DB.Query(`SELECT directory, data_type, is_read, created_at, 
+		read_at FROM read_table`)
 	if err != nil {
 		e.Logger.Println(err)
 		return nil, err
@@ -107,14 +144,13 @@ func (e *Etl) Extract(path *string, funcs ...ExtractFunc) ([]*database.Insertabl
 	var c chan []string = make(chan []string)
 	var extractedData []*database.Insertable
 
-	go utils.CsvStreamer(path, e.Logger, c)
+	go utils.CsvStreamer(path, EtlLogger, c)
 	for stream := range c {
 		var data database.Insertable
 		var shouldAppend bool = true
 		for _, extractor := range funcs {
 			err := extractor(&stream, &data)
 			if err != nil {
-				// TODO: dodac tworzenie errorow
 				e.Logger.Printf("Got error while extracting: %v\n", err)
 				shouldAppend = false
 				break
@@ -149,6 +185,10 @@ func (e *Etl) Load(pipeline *database.Insertable, funcs ...LoadFunc) error {
 }
 
 func (e *Etl) Start() error {
+	if err := e.HealthCheck(); err != nil {
+		EtlLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
+	}
+
 	dfms, err := e.IsDataExtracted()
 	if err != nil {
 		e.Logger.Printf("Error: %v.\n", err)
@@ -246,14 +286,44 @@ func (e *Etl) Start() error {
 			e.Logger.Fatalf("Error while inserting: %v\n", err)
 		}
 
+		if err = database.RebuildTable(e.DB, "movies", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "languages", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "keywords", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "genres", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "countries", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "movie2companies", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "movie2countries", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "movie2genres", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "movie2keywords", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "movie2languages", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+		}
 		elapsed := time.Since(start)
-		e.Logger.Printf("Loading completed: %v.\n", elapsed)
 		// FIXME: Ten kod powoduje, ze update zajmuje za duzo czasu
 		// _, err = e.DB.Exec(`update read_table set is_read=1,
 		// read_at=current_timestamp where is_read=0`)
 		// if err != nil {
 		// 	e.Logger.Println(err)
 		// }
+		e.Logger.Printf("Loading completed: %v.\n", elapsed)
 	}
 	// v1 of api.
 	{
@@ -277,15 +347,31 @@ func (e *Etl) Start() error {
 	return fmt.Errorf("server closed")
 }
 
-func (e *Etl) SetConfig() (*viper.Viper, error) {
-	v := viper.New()
-	v.SetConfigName("EtlConfig")
-	v.SetConfigType("toml")
-	v.AddConfigPath(os.Getenv("ETL_CONFIG_DIR_PATH"))
-	if err := v.ReadInConfig(); err != nil {
-		return nil, err
+func (e *Etl) HealthCheck() error {
+	if e.Logger == nil {
+		return fmt.Errorf("No logger setup")
 	}
-	return v, nil
+
+	if e.Router == nil {
+		return fmt.Errorf("No router setup")
+	}
+
+	if e.DB == nil {
+		return fmt.Errorf("No database setup")
+	}
+
+	if e.ConnInfo == nil {
+		return fmt.Errorf("No connection info setup")
+	}
+
+	if e.ConfigReader == nil {
+		return fmt.Errorf("No config setup")
+	}
+
+	if e.MaxBatchSize <= 0 {
+		return fmt.Errorf("Incorrect batch size")
+	}
+	return nil
 }
 
 // ExposeConnInfo exposes configuration.
@@ -294,5 +380,5 @@ func (e *Etl) ExposeConnInfo() *services.ConnInfo {
 }
 
 func (e *Etl) String() string {
-	return "ETL"
+	return "Etl"
 }

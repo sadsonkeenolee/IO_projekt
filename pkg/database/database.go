@@ -1,9 +1,17 @@
 package database
 
 import (
+	"database/sql"
 	_ "database/sql"
 	"fmt"
+	"log"
+	"os"
+
+	gsdmysql "github.com/go-sql-driver/mysql"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
+
+var DatabaseLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
 
 const (
 	ItemNotFound    string = "no information"
@@ -85,4 +93,22 @@ type Insertable interface {
 type Queryable interface {
 	// Marker interface for a struct that is a Queryable item.
 	IsQueryable() bool
+}
+
+func ParseDriverConfig(ci *services.ConnInfo) *gsdmysql.Config {
+	cfg := gsdmysql.NewConfig()
+	cfg.User = ci.Username
+	cfg.Passwd = ci.Password
+	cfg.Net = "tcp"
+	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
+	cfg.DBName = ci.Name
+	return cfg
+}
+
+func RebuildTable(db *sql.DB, table, engine string) error {
+	_, err := db.Exec(`ALTER TABLE ? ENGINE = ?`, table, engine)
+	if err != nil {
+		return err
+	}
+	return nil
 }
