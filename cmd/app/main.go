@@ -15,16 +15,19 @@ import (
 	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 )
 
+var MainLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Lshortfile)
+
 // Define global flags
-var migrateFlag = flag.Bool("migrate", false, "run a migration in the current app")
-var forceFlag = flag.Bool("force", false, "will force any operation you do")
-var upFlag = flag.Bool("up", false, "run an up migration, otherwise down")
-var dropFlag = flag.Bool("drop", false, "wipe out a database, use only if the database is bugged")
-var versionFlag = flag.Int("version", 0, "specify the number of the version")
-var serviceFlag = flag.String("service", "credentials", "specify which service to run")
+var migrateFlag = flag.Bool("migrate", false, "run migration")
+var forceFlag = flag.Bool("force", false, "will force migration to the given version")
+var upFlag = flag.Bool("up", false, "up migration, otherwise down")
+var wipeFlag = flag.Bool("wipe", false, "wipe out a database")
+var versionFlag = flag.Int("version", 0, "value of migration")
+var serviceNameFlag = flag.String("service", "", "service name to run")
 
 const (
-	Credentials = iota
+	Invalid = iota
+	Credentials
 	Etl
 	Fetch
 )
@@ -37,39 +40,38 @@ var serviceMap = map[string]uint{
 
 func main() {
 	flag.Parse()
-	l := log.New(os.Stdout, "main: ", log.LstdFlags)
-
 	// Define all the necessary environment variables.
-	// Global variables here vvv
 	configsPath, err := filepath.Abs("api/configs")
 	if err != nil {
-		l.Fatalf("The function failed: %v", err)
+		MainLogger.Fatalf("Error while setting up the config file: %v\n", err)
 	}
 
 	downloadedDataPath, err := filepath.Abs("temp/")
 	if err != nil {
-		l.Fatalf("The function failed: %v", err)
+		MainLogger.Fatalf("Error while setting up the temp directory: %v\n", err)
 	}
 	_ = os.Setenv("DOWNLOAD_DIR", downloadedDataPath)
 
-	// Global variables here ^^^
-
+	// Here goes the rest of the program
 	var migrationsPath string
-	switch serviceMap[*serviceFlag] {
+	switch serviceMap[*serviceNameFlag] {
 	case Credentials:
 		migrationsPath, err = filepath.Abs("api/migrations/credentials")
 	case Etl:
 		migrationsPath, err = filepath.Abs("api/migrations/etl")
 	case Fetch:
 		migrationsPath, err = filepath.Abs("api/migrations/fetch")
+	default:
+		MainLogger.Fatalf("`%v` is an invalid name for a service\n", *serviceNameFlag)
 	}
 
 	if err != nil {
-		l.Fatalf("The function failed: %v", err)
+		MainLogger.Fatalf("Error while setting up the migration paths: %v\n", err)
 	}
-	migrationsPath = "file://" + migrationsPath
 
-	switch serviceMap[*serviceFlag] {
+	migrationsPath = filepath.Join("file:/", migrationsPath)
+
+	switch serviceMap[*serviceNameFlag] {
 	case Credentials:
 		_ = os.Setenv("CREDENTIALS_CONFIG_DIR_PATH", configsPath)
 		_ = os.Setenv("CREDENTIALS_MIGRATIONS_DIR_PATH", migrationsPath)
@@ -82,39 +84,83 @@ func main() {
 	}
 
 	var s services.IService
-	switch serviceMap[*serviceFlag] {
+	switch serviceMap[*serviceNameFlag] {
 	case Credentials:
-		s, _ = credentials.NewCredentials()
+		s = credentials.CredentialsBuilder(
+			credentials.WithLogger(
+				os.Stdout,
+				"Credentials Service:  ",
+				log.LstdFlags|log.Lmsgprefix,
+			),
+			credentials.WithRouter(),
+			credentials.WithConfig(
+				"CredentialsConfig",
+				"toml",
+				os.Getenv("CREDENTIALS_CONFIG_DIR_PATH"),
+			),
+			credentials.WithConnectionInfo("ConnInfo"),
+			credentials.WithDatabase(),
+		)
 	case Etl:
-		s, _ = etl.NewEtl(1000)
+		s = etl.EtlBuilder(
+			etl.WithLogger(
+				os.Stdout,
+				"Etl Service:  ",
+				log.LstdFlags|log.Lmsgprefix,
+			),
+			etl.WithRouter(),
+			etl.WithConfig(
+				"EtlConfig",
+				"toml",
+				os.Getenv("ETL_CONFIG_DIR_PATH"),
+			),
+			etl.WithConnectionInfo("ConnInfo"),
+			etl.WithDatabase(),
+			etl.WithBatchSize(64),
+		)
 	case Fetch:
-		s, _ = fetch.NewFetch()
+		s = fetch.FetchBuilder(
+			fetch.WithLogger(
+				os.Stdout,
+				"Fetch Service:  ",
+				log.LstdFlags|log.Lmsgprefix,
+			),
+			fetch.WithRouter(),
+			fetch.WithConfig(
+				"FetchConfig",
+				"toml",
+				os.Getenv("FETCH_CONFIG_DIR_PATH"),
+			),
+			fetch.WithConnectionInfo("ConnInfo"),
+			fetch.WithDatabase(),
+		)
 	}
 
 	if *migrateFlag {
 		ci := s.ExposeConnInfo()
 
-		if *dropFlag {
+		if *wipeFlag {
 			if err := utils.MigrateWipe(&migrationsPath, ci); err != nil {
-				l.Fatalf("The function failed: %v\n", err)
+				MainLogger.Fatalf("The function failed: %v\n", err)
 			}
-			l.Println("Database wiped.")
+			MainLogger.Println("Database wiped.")
 			return
 		}
 
-		if err := utils.MigrateToVersion(*versionFlag, ci,
+		if err := utils.MigrateDatabase(*versionFlag, ci,
 			&migrationsPath, upFlag, forceFlag); err != nil {
-			l.Fatalf("The function failed: %v\n", err)
+			MainLogger.Fatalf("The function failed: %v\n", err)
 		}
-		l.Println("Migration completed.")
+		MainLogger.Println("Migration completed.")
 		return
 	}
 
-	l.Printf("%v is starting...\n", s)
+	MainLogger.Printf("%v is starting...\n", s)
 	err = s.Start()
-	l.Printf("Server returned value: %v.\n", err)
+	MainLogger.Printf("Server returned value: %v.\n", err)
 }
 
 // TODO:
 // -normalizacja i oczyszczenie stringow (baza sie buguje)
 // -przebudowanie tabeli (po insert ignore mozna miec niewlasciwe rekordy)
+// - utworzenie widokow w bazie danych

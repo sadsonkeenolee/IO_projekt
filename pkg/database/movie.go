@@ -29,51 +29,82 @@ const (
 	NMovie2CountriesFields int = 2
 )
 
+var TmdbIndices map[string]int = map[string]int{
+	"Budget":              0,
+	"Genre":               1,
+	"MovieId":             3,
+	"Keywords":            4,
+	"OriginalLanguage":    5,
+	"Title":               6,
+	"Overview":            7,
+	"Popularity":          8,
+	"ProductionCompanies": 9,
+	"ProductionCountries": 10,
+	"ReleaseDate":         11,
+	"Revenue":             12,
+	"Runtime":             13,
+	"SpokenLanguages":     14,
+	"Status":              15,
+	"Tagline":             17,
+	"AverageScore":        18,
+	"TotalScore":          19,
+}
+
+var TmdbCreditsIndices map[string]int = map[string]int{
+	"MovieId": 0,
+	"Cast":    2,
+	"Crew":    3,
+}
+
 var (
 	MovieInsertQuery Query = Query{
-		Content: "INSERT IGNORE INTO movies(budget,tmdb_id,original_lang_id,title,overview,popularity,release_date,revenue,runtime,status,tagline,vote_average,vote_total) VALUES",
-		Fields:  "(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		Content: `INSERT IGNORE INTO movies(
+		budget,tmdb_id,original_lang_id,title,overview,
+		popularity,release_date,revenue,runtime,status,tagline,
+		vote_average,vote_total) 
+		VALUES`,
+		Fields: `(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 	}
 	LanguagesInsertQuery Query = Query{
-		Content: "INSERT IGNORE INTO languages(encoding, name) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO languages(encoding, name) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	KeywordsInsertQuery Query = Query{
-		Content: "INSERT IGNORE INTO keywords(ID, name) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO keywords(ID, name) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	GenreInsertQuery Query = Query{
-		Content: "INSERT IGNORE INTO genres(ID, name) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO genres(ID, name) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	CountryInsertQuery Query = Query{
-		Content: "INSERT IGNORE INTO countries(encoding, name) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO countries(encoding, name) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	CompananyInsertQuery Query = Query{
-		Content: "INSERT IGNORE INTO companies(ID, name) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO companies(ID, name) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	Movie2LanguagesInsertQuery = Query{
-		Content: "INSERT IGNORE INTO movie2languages(movie_id, language_id) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO movie2languages(movie_id, language_id) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	Movie2KeywordsInsertQuery = Query{
-		Content: "INSERT IGNORE INTO movie2keywords(movie_id, keyword_id) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO movie2keywords(movie_id, keyword_id) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	Movie2GenresInsertQuery = Query{
-		Content: "INSERT IGNORE INTO movie2genres(movie_id, genre_id) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO movie2genres(movie_id, genre_id) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 	Movie2CountriesInsertQuery = Query{
-		Content: "INSERT IGNORE INTO movie2countries(movie_id, country_en) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO movie2countries(movie_id, country_en) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 
 	Movie2CompaniesInsertQuery = Query{
-		Content: "INSERT IGNORE INTO movie2companies(movie_id, company_id) VALUES",
-		Fields:  "(?, ?)",
+		Content: `INSERT IGNORE INTO movie2companies(movie_id, company_id) VALUES`,
+		Fields:  `(?, ?)`,
 	}
 )
 
@@ -128,36 +159,26 @@ type CrewMember struct {
 }
 
 type MovieInsertable struct {
-	Budget              uint64
-	Genres              []Genre
-	MovieId             uint64
-	Keywords            []Keywords
-	OriginalLanguage    string
-	Title               string
-	Overview            string
-	Popularity          float64
-	ProductionCompanies []ProductionCompanies
-	ProductionCountries []CodeCountry
-	ReleaseDate         time.Time
-	Revenue             int64
-	Runtime             int64
-	SpokenLanguages     []CodeLanguage
-	Status              string
-	Tagline             string
-	AverageScore        float64
-	TotalScore          uint64
-	Cast                []CastMember
-	Crew                []CrewMember
-}
-
-var DeadlockError = fmt.Errorf("Error 1213 (40001): Deadlock found when trying to get lock; try restarting transaction")
-
-// placeholder
-func SqlErrorCode(err error) uint {
-	if err == DeadlockError {
-		return 1213
-	}
-	return 0
+	Budget              uint64                `json:"budget"`
+	Genres              []Genre               `json:"genres"`
+	MovieId             uint64                `json:"movie_id"`
+	Keywords            []Keywords            `json:"keywords"`
+	OriginalLanguage    string                `json:"original_language"`
+	Title               string                `json:"title"`
+	Overview            string                `json:"overview"`
+	Popularity          float64               `json:"popularity"`
+	ProductionCompanies []ProductionCompanies `json:"production_companies"`
+	ProductionCountries []CodeCountry         `json:"production_countries"`
+	ReleaseDate         time.Time             `json:"release_date"`
+	Revenue             int64                 `json:"revenue"`
+	Runtime             int64                 `json:"runtime"`
+	SpokenLanguages     []CodeLanguage        `json:"spoken_languages"`
+	Status              string                `json:"status"`
+	Tagline             string                `json:"tagline"`
+	AverageScore        float64               `json:"average_score"`
+	TotalScore          uint64                `json:"total_score"`
+	Cast                []CastMember          `json:"cast"`
+	Crew                []CrewMember          `json:"crew"`
 }
 
 func (mi *MovieInsertable) IsInsertable() bool {
@@ -165,7 +186,7 @@ func (mi *MovieInsertable) IsInsertable() bool {
 }
 
 type MovieQueryable struct {
-	Id uint64
+	Id uint64 `json:"id"`
 	MovieInsertable
 }
 
@@ -280,7 +301,7 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -335,7 +356,7 @@ func InsertIntoLanguagesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -390,7 +411,7 @@ func InsertIntoKeywordsChunked(db *sql.DB, chunkSize *int) func(data *Insertable
 					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -429,7 +450,8 @@ func InsertIntoGenresChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 
 						for _, g := range mi.Genres {
 							encodingTracker.mu.Lock()
-							if _, ok := encodingTracker.genresSeen[g.Id]; ok {
+							ok := encodingTracker.genresSeen[g.Id]
+							if ok || g.Name == "" {
 								encodingTracker.mu.Unlock()
 								continue
 							}
@@ -445,7 +467,7 @@ func InsertIntoGenresChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 
@@ -484,7 +506,8 @@ func InsertIntoCountriesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 
 						for _, pc := range mi.ProductionCountries {
 							encodingTracker.mu.Lock()
-							if _, ok := encodingTracker.countriesSeen[pc.Name]; ok {
+							ok := encodingTracker.countriesSeen[pc.Name]
+							if ok || pc.Name == "" {
 								encodingTracker.mu.Unlock()
 								continue
 							}
@@ -500,7 +523,7 @@ func InsertIntoCountriesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -539,7 +562,8 @@ func InsertIntoCompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 
 						for _, pc := range mi.ProductionCompanies {
 							encodingTracker.mu.Lock()
-							if _, ok := encodingTracker.companiesSeen[pc.Id]; ok {
+							ok := encodingTracker.companiesSeen[pc.Id]
+							if ok || pc.Name == "" {
 								encodingTracker.mu.Unlock()
 								continue
 							}
@@ -554,7 +578,7 @@ func InsertIntoCompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 
@@ -596,7 +620,7 @@ func InsertIntoMovie2LanguagesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -638,7 +662,7 @@ func InsertIntoMovie2KeywordsChunked(db *sql.DB, chunkSize *int) func(data *Inse
 					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -679,7 +703,7 @@ func InsertIntoMovie2GenresChunked(db *sql.DB, chunkSize *int) func(data *Insert
 					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -721,7 +745,7 @@ func InsertIntoMovie2CountriesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -763,7 +787,7 @@ func InsertIntoMovie2CompaniesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -805,7 +829,7 @@ func UpdateLanguageForMovies(db *sql.DB, chunkSize *int) func(data *Insertable) 
 					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
-						fmt.Println(err)
+						DatabaseLogger.Println(err)
 					}
 					c <- true
 				})
@@ -824,24 +848,32 @@ func TmdbMapFromStream(stream *[]string, data *Insertable) error {
 	s := *stream
 	target := &MovieInsertable{}
 
-	target.Budget, _ = strconv.ParseUint(s[0], 10, 64)
-	_ = json.Unmarshal([]byte(s[1]), &target.Genres)
-	target.MovieId, _ = strconv.ParseUint(s[3], 10, 64)
-	_ = json.Unmarshal([]byte(s[4]), &target.Keywords)
-	target.OriginalLanguage = s[5]
-	target.Title = s[6]
-	target.Overview = s[7]
-	target.Popularity, _ = strconv.ParseFloat(s[8], 64)
-	_ = json.Unmarshal([]byte(s[9]), &target.ProductionCompanies)
-	_ = json.Unmarshal([]byte(s[10]), &target.ProductionCountries)
-	target.ReleaseDate, _ = time.Parse("2006-01-02", s[11])
-	target.Revenue, _ = strconv.ParseInt(s[12], 10, 64)
-	target.Runtime, _ = strconv.ParseInt(s[13], 10, 64)
-	_ = json.Unmarshal([]byte(s[14]), &target.SpokenLanguages)
-	target.Status = s[15]
-	target.Tagline = s[17]
-	target.AverageScore, _ = strconv.ParseFloat(s[18], 64)
-	target.TotalScore, _ = strconv.ParseUint(s[19], 10, 64)
+	if len(s[TmdbIndices["Title"]]) <= 0 {
+		return fmt.Errorf("%v is incorrect title", s[6])
+	}
+
+	if len(s[TmdbIndices["OriginalLanguage"]]) != 2 {
+		return fmt.Errorf("%v is incorrect language", s[5])
+	}
+
+	target.Budget, _ = strconv.ParseUint(s[TmdbIndices["Budget"]], 10, 64)
+	_ = json.Unmarshal([]byte(s[TmdbIndices["Genre"]]), &target.Genres)
+	target.MovieId, _ = strconv.ParseUint(s[TmdbIndices["MovieId"]], 10, 64)
+	_ = json.Unmarshal([]byte(s[TmdbIndices["Keywords"]]), &target.Keywords)
+	target.OriginalLanguage = s[TmdbIndices["OriginalLanguage"]]
+	target.Title = s[TmdbIndices["Title"]]
+	target.Overview = s[TmdbIndices["Overview"]]
+	target.Popularity, _ = strconv.ParseFloat(s[TmdbIndices["Popularity"]], 64)
+	_ = json.Unmarshal([]byte(s[TmdbIndices["ProductionCompanies"]]), &target.ProductionCompanies)
+	_ = json.Unmarshal([]byte(s[TmdbIndices["ProductionCountries"]]), &target.ProductionCountries)
+	target.ReleaseDate, _ = time.Parse("2006-01-02", s[TmdbIndices["ReleaseDate"]])
+	target.Revenue, _ = strconv.ParseInt(s[TmdbIndices["Revenue"]], 10, 64)
+	target.Runtime, _ = strconv.ParseInt(s[TmdbIndices["Runtime"]], 10, 64)
+	_ = json.Unmarshal([]byte(s[TmdbIndices["SpokenLanguages"]]), &target.SpokenLanguages)
+	target.Status = s[TmdbIndices["Status"]]
+	target.Tagline = s[TmdbIndices["Tagline"]]
+	target.AverageScore, _ = strconv.ParseFloat(s[TmdbIndices["AverageScore"]], 64)
+	target.TotalScore, _ = strconv.ParseUint(s[TmdbIndices["TotalScore"]], 10, 64)
 	*data = target
 	return nil
 }
@@ -855,9 +887,9 @@ func TmdbMapCreditsFromStream(stream *[]string, data *Insertable) error {
 	tgt := &CastCrewMetadata{}
 	s := *stream
 
-	tgt.MovieId, _ = strconv.ParseUint(s[0], 10, 64)
-	json.Unmarshal([]byte(s[2]), &tgt.Cast)
-	json.Unmarshal([]byte(s[3]), &tgt.Crew)
+	tgt.MovieId, _ = strconv.ParseUint(s[TmdbCreditsIndices["MovieId"]], 10, 64)
+	json.Unmarshal([]byte(s[TmdbCreditsIndices["Cast"]]), &tgt.Cast)
+	json.Unmarshal([]byte(s[TmdbCreditsIndices["Crew"]]), &tgt.Crew)
 
 	*data = tgt
 	return nil

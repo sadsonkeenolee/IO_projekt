@@ -32,6 +32,6 @@ go run cmd/app/main.go --help
 ```
 Standardowy setup zazwyczaj składa się z:
 ```bash
-go run cmd/app/main.go --service "credentials" --migrate --up --version=[numer migracji który chcemy]
+go run cmd/app/main.go --service "credentials" --migrate --up --version=0 # zaaplikuje najwyzsza migracje
 go run cmd/app/main.go --service "credentials" # uruchomienie serwisu
 ```

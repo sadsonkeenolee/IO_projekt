@@ -42,19 +42,18 @@ type IService interface {
 	// Start makes the service public, allowing for incoming
 	// connections. Function should implement how Service shuts down.
 	Start() error
-	// SetConfig sets up config reader, allowing to read TOML config files. All
-	// necessary paths should be as environment variables.
-	SetConfig() (*viper.Viper, error)
+	// HealthCheck validates a service's configuration.
+	HealthCheck() error
 	// ExposeConnInfo should return configuration info.
 	ExposeConnInfo() *ConnInfo
 }
 
 // Service implements basic functionality for any Service.
 type Service struct {
+	Logger       *log.Logger
 	Router       *gin.Engine
 	DB           *sql.DB
 	ConnInfo     *ConnInfo
-	Logger       *log.Logger
 	State        ServiceState
 	ConfigReader *viper.Viper
 }
