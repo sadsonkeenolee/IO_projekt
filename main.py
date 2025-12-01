@@ -56,8 +56,8 @@ class RecommendedItem(Item):
   score: float
   title: Optional[str] = None
 
-class RecommendedResponse(BaseModel):
-  items: List[RecommendedItem]
+class RecommendResponse(BaseModel):
+    items: List[RecommendedItem]
 
 class FeedbackRequest(BaseModel):
   user_id: int
