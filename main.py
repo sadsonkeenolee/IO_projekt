@@ -18,17 +18,29 @@ ALL_ITEMS_DB = [
 ]
 
 ALL_GENRES = sorted(list(set(g for item in ALL_ITEMS_DB for g in item['genres'])))
-
 GENRE_INDEX = {genre: i for i, genre in enumerate(ALL_GENRES)}
-
 Vector = List[float]
+
+N_ITEMS = len(ALL_ITEMS_DB)
+genre_counts = [0] * len(ALL_GENRES)
+for item in ALL_ITEMS_DB:
+    for genre in item['genres']:
+        idx = GENRE_INDEX[genre]
+        genre_counts[idx] += 1
+
+GENRE_WEIGHTS: List[float] = []
+EPS = 1e-8
+for c in genre_counts:
+    p = c / N_ITEMS if N_ITEMS > 0 else 0.0
+    w = math.log(1.0/(p+EPS)) if p > 0 else 0.0
+    GENRE_WEIGHTS.append(w)
 
 def encode_item(genres: List[str]) -> Vector:
   vector = [0.0] * len(ALL_GENRES)
   for genre in genres:
     idx = GENRE_INDEX.get(genre)
     if idx is not None:
-      vector[idx] = 1.0
+      vector[idx] = GENRE_WEIGHTS[idx]
   return vector
 
 def cosine_similarity(a: Vector, b: Vector) -> float:
