@@ -1,9 +1,0 @@
-# General
-.vscode/
-build/
-api/configs/*
-!api/configs/README.md
-temp/
-
-# frontend
-node_modules/
