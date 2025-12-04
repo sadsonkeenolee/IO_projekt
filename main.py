@@ -6,7 +6,7 @@ from collections import Counter
 import math
 
 app = FastAPI()
-
+# Statyczna, tymczasowa baza danych - do testowania
 ALL_ITEMS_DB = [
     {"id": 1, "type": "movie", "title": "Szybcy i Wściekli", "genres": ["Action", "Crime"]},
     {"id": 2, "type": "book", "title": "Władca Pierścieni", "genres": ["Fantasy", "Adventure"]},
@@ -20,12 +20,13 @@ ALL_ITEMS_DB = [
 ]
 
 ALL_GENRES = sorted(list(set(g for item in ALL_ITEMS_DB for g in item['genres'])))
-GENRE_INDEX = {genre: i for i, genre in enumerate(ALL_GENRES)}
+GENRE_INDEX = {genre: i for i, genre in enumerate(ALL_GENRES)} # Każdy gatunek otrzymuje konkretne miejsce w wektorze
 Vector = List[float]
 
 N_ITEMS = len(ALL_ITEMS_DB)
 genre_counts = [0] * len(ALL_GENRES)
 
+# Zliczanie liczby wystąpień danego gatunku
 for item in ALL_ITEMS_DB:
     for genre in item['genres']:
         idx = GENRE_INDEX[genre]
@@ -33,7 +34,7 @@ for item in ALL_ITEMS_DB:
 
 GENRE_WEIGHTS: List[float] = []
 
-
+# Tokenizacja tytułów (podział na zbiór tokenów oraz słownik) - rozbicie na pojedyncze słowa
 def tokenize(text: str) -> List[str]:
     text = text.lower()
     tokens = re.findall(r'[a-ząćęłńóśżź0-9]+', text)
@@ -51,13 +52,14 @@ for item in ALL_ITEMS_DB:
         df_counts[token] += 1
 
 VOCAB_SIZE = len(vocab_index)
-
+# TF - IDF - służy do oceny ważności słów w tytule
+# IDF obniża znaczenie słów, które występują często, podnoszą znaczenie słów rzadko występujących
 TITLE_IDF: List[float] = [0.0] * VOCAB_SIZE
 for token, idx in vocab_index.items():
     df = df_counts[token]
     TITLE_IDF[idx] = math.log(N_ITEMS / (1.0 + df)) if df > 0 else 0.0
 
-
+# Utworzenie wektora TF-IDF dla tytułu (TF(wi,t)*IDF(wi))
 def encode_title_tfidf(title: str) -> List[float]:
     vector = [0.0] * VOCAB_SIZE
     tokens = tokenize(title)
@@ -74,7 +76,7 @@ def encode_title_tfidf(title: str) -> List[float]:
         vector[idx] = tf * TITLE_IDF[idx]
     return vector
 
-
+# Obliczanie wag gatunków
 EPS = 1e-8
 for c in genre_counts:
     p = c / N_ITEMS if N_ITEMS > 0 else 0.0
@@ -83,7 +85,7 @@ for c in genre_counts:
 
 LAMBDA_TEXT = 1.0
 
-
+# Łączenie wektora gatunków oraz wektora TF-IDF tytułu w jeden wektor cech
 def encode_item(item: Dict) -> Vector:
     genres_vector = [0.0] * len(ALL_GENRES)
 
@@ -96,7 +98,7 @@ def encode_item(item: Dict) -> Vector:
     title_vector_scaled = [LAMBDA_TEXT * x for x in title_vector]
     return genres_vector + title_vector_scaled
 
-
+# Podobieństwo cosinusowe - porównuje wektor użytkownika z wektorem danej rzeczy
 def cosine_similarity(a: Vector, b: Vector) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     na = sum(x * x for x in a) ** 0.5
@@ -107,7 +109,7 @@ def cosine_similarity(a: Vector, b: Vector) -> float:
 
     return dot / (na * nb)
 
-
+# DCG - miara jakości rangingu rekomendacji
 def dcg_at_k(recommended_ids: List[int], relevant_ids: Set[int], k: int) -> float:
     dcg = 0.0
     for rank, item_id in enumerate(recommended_ids[:k], start=1):
@@ -117,7 +119,8 @@ def dcg_at_k(recommended_ids: List[int], relevant_ids: Set[int], k: int) -> floa
         dcg += rel / math.log2(rank + 1)
     return dcg
 
-
+# IDCG
+# nDCG = DCG/IDCG
 def ndcg_at_k(recommended_ids: List[int], relevant_ids: Set[int], k: int) -> float:
     dcg_val = dcg_at_k(recommended_ids, relevant_ids, k)
     ideal_rels = [1.0] * min(len(relevant_ids), k)
@@ -128,6 +131,8 @@ def ndcg_at_k(recommended_ids: List[int], relevant_ids: Set[int], k: int) -> flo
         return 0.0
     return dcg_val / idcg
 
+# Pozwala na sprawdzenie czy w algorytmie poprawiła czy pogorszyła się jakość rekomendacji
+# Wynik bliski 1 - ranking bliski idealnemu
 
 ItemType = Literal['movie', 'book', 'concert']
 
@@ -198,7 +203,7 @@ def recommend(req: RecommendRequest):
                 )
             )
         return RecommendResponse(items=candidates)
-
+# Wektor użytkownika - z polubionych rzeczy - tworzymy "profil użytkownika"
     user_vector = [0.0] * len(encode_item(ALL_ITEMS_DB[0]))
 
     for item in liked_full_items:
@@ -217,7 +222,7 @@ def recommend(req: RecommendRequest):
 
         item_vector = encode_item(db_item)
         score = cosine_similarity(user_vector, item_vector)
-
+        # Ranking rekomendacji (rzeczy są sortowane malejąco po wynku z podobieństwa cosinusowego)
         if score > 0:
             scored_candidates.append(
                 RecommendedItem(
