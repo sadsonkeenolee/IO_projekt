@@ -162,5 +162,4 @@ func main() {
 
 // TODO:
 // -normalizacja i oczyszczenie stringow (baza sie buguje)
-// -przebudowanie tabeli (po insert ignore mozna miec niewlasciwe rekordy)
 // - utworzenie widokow w bazie danych

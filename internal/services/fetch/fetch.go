@@ -160,12 +160,12 @@ func (f *Fetch) TvByTitle(ctx *gin.Context) {
 	bind := Title{Content: ""}
 	if err := ctx.ShouldBindUri(&bind); err != nil {
 		f.Logger.Println(err)
-		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
 		return
 	}
 	if bind.Content == "" {
 		f.Logger.Println("couldn't parse title")
-		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
 		return
 	}
 
@@ -212,7 +212,6 @@ func (f *Fetch) TvById(ctx *gin.Context) {
 	}
 	var mq database.MovieQueryable
 	defer rows.Close()
-	// load the row
 
 	for rows.Next() {
 		if err := rows.Scan(

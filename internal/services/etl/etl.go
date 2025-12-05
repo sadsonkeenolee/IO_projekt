@@ -171,7 +171,7 @@ func (e *Etl) Transform(left, right *[]*database.Insertable, funcs ...TransformF
 	var transformedData []*database.Insertable
 	for _, transform := range funcs {
 		if err := transform(left, right, &transformedData); err != nil {
-			return nil, fmt.Errorf("transformations failed: %v\n", err)
+			e.Logger.Printf("One of the transformations failed: %v\n", err)
 		}
 	}
 	return transformedData, nil
