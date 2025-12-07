@@ -13,17 +13,6 @@ export default function MainPanel({ category }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // statyczna „baza filmów” do testów
-  const fallbackMovies = [
-    { id: 1, title: "Avatar", year: 2009 },
-    { id: 2, title: "Avengers: Endgame", year: 2019 },
-    { id: 3, title: "Interstellar", year: 2014 },
-    { id: 4, title: "The Matrix", year: 1999 },
-    { id: 5, title: "Breaking Bad", year: 2008 },
-    { id: 6, title: "Wiedźmin", year: 2019 },
-    { id: 7, title: "Avatar 2", year: 2022 },
-  ];
-
   // debounce dla wyszukiwania live
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -45,7 +34,7 @@ export default function MainPanel({ category }) {
 
     try {
       let url = "";
-      if (category === "film") url = `http://localhost:9997/v1/api/tv/title/${searchQuery}`;
+      if (category === "film") url = `/api/v1/api/tv/title/${searchQuery}`;
       // w przyszłości: serial / książka
 
       const res = await fetch(url);
@@ -54,12 +43,8 @@ export default function MainPanel({ category }) {
       const data = await res.json();
       setResults(data);
     } catch (err) {
-      // fallback do statycznej listy
-      const filtered = fallbackMovies.filter((movie) =>
-        movie.title.toLowerCase().includes(query.toLowerCase())
-      );
-      setResults(filtered);
-      setError("Nie udało się pobrać danych z serwera, użyto lokalnej listy.");
+      setResults([]);
+      setError("Nie udało się pobrać danych z serwera.");
     }
 
     setLoading(false);
