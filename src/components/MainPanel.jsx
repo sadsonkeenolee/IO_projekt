@@ -34,13 +34,14 @@ export default function MainPanel({ category }) {
 
     try {
       let url = "";
-      if (category === "film") url = `/api/v1/api/tv/title/${searchQuery}`;
+      if (category === "film") url = `http://localhost:9997/v1/api/tv/title/${searchQuery}`;
       // w przyszłości: serial / książka
 
       const res = await fetch(url);
+      console.log(res);
       if (!res.ok) throw new Error("Brak połączenia z serwerem");
 
-      const data = await res.json();
+      const data = await res.body.json();
       setResults(data);
     } catch (err) {
       setResults([]);
