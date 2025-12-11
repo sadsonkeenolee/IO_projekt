@@ -1,12 +1,13 @@
 from typing import List, Optional, Literal, Dict, Set
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import re
 from collections import Counter
 import math
+import numpy as np
 
 app = FastAPI()
-# Statyczna, tymczasowa baza danych - do testowania
+
 ALL_ITEMS_DB = [
     {"id": 1, "type": "movie", "title": "Szybcy i Wściekli", "genres": ["Action", "Crime"]},
     {"id": 2, "type": "book", "title": "Władca Pierścieni", "genres": ["Fantasy", "Adventure"]},
@@ -20,24 +21,29 @@ ALL_ITEMS_DB = [
 ]
 
 ALL_GENRES = sorted(list(set(g for item in ALL_ITEMS_DB for g in item['genres'])))
-GENRE_INDEX = {genre: i for i, genre in enumerate(ALL_GENRES)} # Każdy gatunek otrzymuje konkretne miejsce w wektorze
-Vector = List[float]
+GENRE_INDEX = {genre: i for i, genre in enumerate(ALL_GENRES)}
+N_GENRES = len(ALL_GENRES)
 
 N_ITEMS = len(ALL_ITEMS_DB)
-genre_counts = [0] * len(ALL_GENRES)
+genre_counts = np.zeros(N_GENRES)
 
-# Zliczanie liczby wystąpień danego gatunku
 for item in ALL_ITEMS_DB:
     for genre in item['genres']:
         idx = GENRE_INDEX[genre]
         genre_counts[idx] += 1
 
-GENRE_WEIGHTS: List[float] = []
+EPS = 1e-8
+genre_probs = genre_counts / (N_ITEMS + EPS)
+GENRE_WEIGHTS = np.log(1.0 / (genre_probs + EPS))
 
-# Tokenizacja tytułów (podział na zbiór tokenów oraz słownik) - rozbicie na pojedyncze słowa
+
 def tokenize(text: str) -> List[str]:
     text = text.lower()
-    tokens = re.findall(r'[a-ząćęłńóśżź0-9]+', text)
+    words = re.findall(r'[a-ząćęłńóśżź0-9]+', text)
+    tokens = words.copy()
+    if len(words) > 1:
+        for i in range(len(words) - 1):
+            tokens.append(f"{words[i]}_{words[i + 1]}")
     return tokens
 
 
@@ -52,87 +58,157 @@ for item in ALL_ITEMS_DB:
         df_counts[token] += 1
 
 VOCAB_SIZE = len(vocab_index)
-# TF - IDF - służy do oceny ważności słów w tytule
-# IDF obniża znaczenie słów, które występują często, podnoszą znaczenie słów rzadko występujących
-TITLE_IDF: List[float] = [0.0] * VOCAB_SIZE
+N_FEATURES = N_GENRES + VOCAB_SIZE
+
+TITLE_IDF = np.zeros(VOCAB_SIZE)
 for token, idx in vocab_index.items():
     df = df_counts[token]
     TITLE_IDF[idx] = math.log(N_ITEMS / (1.0 + df)) if df > 0 else 0.0
 
-# Utworzenie wektora TF-IDF dla tytułu (TF(wi,t)*IDF(wi))
-def encode_title_tfidf(title: str) -> List[float]:
-    vector = [0.0] * VOCAB_SIZE
-    tokens = tokenize(title)
-    if not tokens:
-        return vector
 
-    counts = Counter(tokens)
-    total = len(tokens)
-    for token, count in counts.items():
-        idx = vocab_index.get(token)
-        if idx is None:
-            continue
-        tf = count / total
-        vector[idx] = tf * TITLE_IDF[idx]
-    return vector
-
-# Obliczanie wag gatunków
-EPS = 1e-8
-for c in genre_counts:
-    p = c / N_ITEMS if N_ITEMS > 0 else 0.0
-    w = math.log(1.0 / (p + EPS)) if p > 0 else 0.0
-    GENRE_WEIGHTS.append(w)
-
-LAMBDA_TEXT = 1.0
-
-# Łączenie wektora gatunków oraz wektora TF-IDF tytułu w jeden wektor cech
-def encode_item(item: Dict) -> Vector:
-    genres_vector = [0.0] * len(ALL_GENRES)
+def encode_item(item: Dict) -> np.ndarray:
+    vec = np.zeros(N_FEATURES)
 
     for genre in item['genres']:
         idx = GENRE_INDEX.get(genre)
         if idx is not None:
-            genres_vector[idx] = GENRE_WEIGHTS[idx]
+            vec[idx] = GENRE_WEIGHTS[idx]
 
-    title_vector = encode_title_tfidf(item['title'])
-    title_vector_scaled = [LAMBDA_TEXT * x for x in title_vector]
-    return genres_vector + title_vector_scaled
+    tokens = tokenize(item['title'])
+    if tokens:
+        counts = Counter(tokens)
+        total = len(tokens)
+        for token, count in counts.items():
+            idx = vocab_index.get(token)
+            if idx is not None:
+                tf = count / total
+                vec[N_GENRES + idx] = tf * TITLE_IDF[idx]
 
-# Podobieństwo cosinusowe - porównuje wektor użytkownika z wektorem danej rzeczy
-def cosine_similarity(a: Vector, b: Vector) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    na = sum(x * x for x in a) ** 0.5
-    nb = sum(y * y for y in b) ** 0.5
+    return vec
+
+
+ITEM_MATRIX = np.zeros((N_ITEMS, N_FEATURES))
+ID_TO_INDEX = {}
+for i, item in enumerate(ALL_ITEMS_DB):
+    ITEM_MATRIX[i] = encode_item(item)
+    ID_TO_INDEX[item['id']] = i
+
+
+def apply_svd(matrix: np.ndarray, k: int = 5):
+    mean_vec = np.mean(matrix, axis=0)
+    centered_matrix = matrix - mean_vec
+
+    U, s, Vt = np.linalg.svd(centered_matrix, full_matrices=False)
+
+    k = min(k, Vt.shape[0])
+    components = Vt[:k]
+
+    reduced_matrix = np.dot(centered_matrix, components.T)
+    return reduced_matrix, components, mean_vec
+
+
+LATENT_DIM = 5
+ITEM_MATRIX_REDUCED, SVD_COMPONENTS, SVD_MEAN = apply_svd(ITEM_MATRIX, k=LATENT_DIM)
+
+
+def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
+    dot = np.dot(a, b)
+    na = np.linalg.norm(a)
+    nb = np.linalg.norm(b)
 
     if na == 0 or nb == 0:
         return 0.0
 
-    return dot / (na * nb)
+    return float(dot / (na * nb))
 
-# DCG - miara jakości rangingu rekomendacji
+
+def softmax(scores: List[float], temperature: float = 1.0) -> List[float]:
+    if not scores:
+        return []
+
+    arr_scores = np.array(scores)
+    max_score = np.max(arr_scores)
+    exps = np.exp((arr_scores - max_score) / temperature)
+    sum_exps = np.sum(exps)
+
+    if sum_exps == 0:
+        return list(exps)
+
+    return list(exps / sum_exps)
+
+
+def mmr_selection(
+        user_vector: np.ndarray,
+        candidate_indices: List[int],
+        item_matrix: np.ndarray,
+        limit: int,
+        lambda_param: float = 0.5
+) -> List[int]:
+    selected_indices = []
+    candidates = candidate_indices[:]
+
+    if not candidates:
+        return []
+
+    sim_to_user = {}
+    for idx in candidates:
+        sim_to_user[idx] = cosine_similarity(user_vector, item_matrix[idx])
+
+    while len(selected_indices) < limit and candidates:
+        best_score = -float('inf')
+        best_candidate = -1
+
+        for candidate_idx in candidates:
+            relevance = sim_to_user[candidate_idx]
+
+            max_sim_to_selected = 0.0
+            if selected_indices:
+                similarities = []
+                cand_vec = item_matrix[candidate_idx]
+                for sel_idx in selected_indices:
+                    sel_vec = item_matrix[sel_idx]
+                    similarities.append(cosine_similarity(cand_vec, sel_vec))
+                max_sim_to_selected = max(similarities)
+
+            mmr_score = (lambda_param * relevance) - ((1 - lambda_param) * max_sim_to_selected)
+
+            if mmr_score > best_score:
+                best_score = mmr_score
+                best_candidate = candidate_idx
+
+        if best_candidate != -1:
+            selected_indices.append(best_candidate)
+            candidates.remove(best_candidate)
+        else:
+            break
+
+    return selected_indices
+
+
 def dcg_at_k(recommended_ids: List[int], relevant_ids: Set[int], k: int) -> float:
-    dcg = 0.0
-    for rank, item_id in enumerate(recommended_ids[:k], start=1):
-        rel = 1.0 if item_id in relevant_ids else 0.0
-        if rel == 0.0:
-            continue
-        dcg += rel / math.log2(rank + 1)
-    return dcg
+    k = min(k, len(recommended_ids))
+    if k == 0: return 0.0
 
-# IDCG
-# nDCG = DCG/IDCG
+    rel = np.array([1.0 if pid in relevant_ids else 0.0 for pid in recommended_ids[:k]])
+    if np.sum(rel) == 0: return 0.0
+
+    discounts = np.log2(np.arange(len(rel)) + 2)
+    return float(np.sum(rel / discounts))
+
+
 def ndcg_at_k(recommended_ids: List[int], relevant_ids: Set[int], k: int) -> float:
-    dcg_val = dcg_at_k(recommended_ids, relevant_ids, k)
-    ideal_rels = [1.0] * min(len(relevant_ids), k)
-    idcg = 0.0
-    for rank, rel in enumerate(ideal_rels, start=1):
-        idcg += rel / math.log2(rank + 1)
-    if idcg == 0.0:
-        return 0.0
-    return dcg_val / idcg
+    dcg = dcg_at_k(recommended_ids, relevant_ids, k)
 
-# Pozwala na sprawdzenie czy w algorytmie poprawiła czy pogorszyła się jakość rekomendacji
-# Wynik bliski 1 - ranking bliski idealnemu
+    k_prime = min(len(relevant_ids), k)
+    if k_prime == 0: return 0.0
+
+    ideal_rel = np.ones(k_prime)
+    ideal_discounts = np.log2(np.arange(k_prime) + 2)
+    idcg = np.sum(ideal_rel / ideal_discounts)
+
+    if idcg == 0: return 0.0
+    return float(dcg / idcg)
+
 
 ItemType = Literal['movie', 'book', 'concert']
 
@@ -145,11 +221,14 @@ class Item(BaseModel):
 class RecommendRequest(BaseModel):
     user_id: Optional[int] = None
     liked_items: List[Item]
-    limit: int = 10
+    limit: int = Field(default=10, ge=1, le=50)
+    temperature: float = Field(default=1.0, gt=0.0)
+    diversity: float = Field(default=0.3, ge=0.0, le=1.0)
 
 
 class RecommendedItem(Item):
     score: float
+    prob: Optional[float] = None
     title: Optional[str] = None
 
 
@@ -177,81 +256,99 @@ class EvaluateResponse(BaseModel):
 
 @app.get("/ml/health")
 def health():
-    return {"status": "ok", "service": "ml", "version": "0.1.0"}
+    return {"status": "ok", "service": "ml", "version": "0.3.0"}
 
 
 @app.post("/ml/recommend", response_model=RecommendResponse)
 def recommend(req: RecommendRequest):
-    liked_full_items = []
+    liked_indices = []
     liked_ids = set()
 
     for incoming_item in req.liked_items:
-        found = next((x for x in ALL_ITEMS_DB if x["id"] == incoming_item.id), None)
-        if found:
-            liked_full_items.append(found)
-            liked_ids.add(found["id"])
+        if incoming_item.id in ID_TO_INDEX:
+            liked_indices.append(ID_TO_INDEX[incoming_item.id])
+            liked_ids.add(incoming_item.id)
 
-    if not liked_full_items:
+    if not liked_indices:
         candidates = []
         for item in ALL_ITEMS_DB[:req.limit]:
             candidates.append(
                 RecommendedItem(
                     id=item["id"],
-                    type=item["type"],  # type: ignore
+                    type=item["type"],
                     score=0.1,
+                    prob=None,
                     title=item["title"],
                 )
             )
         return RecommendResponse(items=candidates)
-# Wektor użytkownika - z polubionych rzeczy - tworzymy "profil użytkownika"
-    user_vector = [0.0] * len(encode_item(ALL_ITEMS_DB[0]))
 
-    for item in liked_full_items:
-        item_vec = encode_item(item)
-        user_vector = [u + i for u, i in zip(user_vector, item_vec)]
+    liked_matrix_svd = ITEM_MATRIX_REDUCED[liked_indices]
+    user_vector_svd = np.mean(liked_matrix_svd, axis=0)
 
-    count = len(liked_full_items)
-    if count > 0:
-        user_vector = [x / count for x in user_vector]
+    pre_candidates_scores = []
 
-    scored_candidates: List[RecommendedItem] = []
-
-    for db_item in ALL_ITEMS_DB:
+    for i in range(N_ITEMS):
+        db_item = ALL_ITEMS_DB[i]
         if db_item["id"] in liked_ids:
             continue
 
-        item_vector = encode_item(db_item)
-        score = cosine_similarity(user_vector, item_vector)
-        # Ranking rekomendacji (rzeczy są sortowane malejąco po wynku z podobieństwa cosinusowego)
-        if score > 0:
-            scored_candidates.append(
-                RecommendedItem(
-                    id=db_item["id"],
-                    type=db_item["type"],  # type: ignore
-                    score=round(score, 4),
-                    title=db_item["title"],
-                )
-            )
+        sim = cosine_similarity(user_vector_svd, ITEM_MATRIX_REDUCED[i])
+        if sim > -1.0:
+            pre_candidates_scores.append((i, sim))
 
-    scored_candidates.sort(key=lambda x: x.score, reverse=True)
-    return RecommendResponse(items=scored_candidates[:req.limit])
+    pre_candidates_scores.sort(key=lambda x: x[1], reverse=True)
+
+    top_n_pool_size = min(len(pre_candidates_scores), req.limit * 3)
+    top_candidates_indices = [x[0] for x in pre_candidates_scores[:top_n_pool_size]]
+
+    mmr_lambda = 1.0 - req.diversity
+
+    final_indices = mmr_selection(
+        user_vector=user_vector_svd,
+        candidate_indices=top_candidates_indices,
+        item_matrix=ITEM_MATRIX_REDUCED,
+        limit=req.limit,
+        lambda_param=mmr_lambda
+    )
+
+    final_items = []
+    raw_scores = []
+
+    for idx in final_indices:
+        db_item = ALL_ITEMS_DB[idx]
+        score = cosine_similarity(user_vector_svd, ITEM_MATRIX_REDUCED[idx])
+
+        final_items.append(RecommendedItem(
+            id=db_item["id"],
+            type=db_item["type"],
+            score=round(float(score), 4),
+            prob=None,
+            title=db_item["title"],
+        ))
+        raw_scores.append(score)
+
+    probs = softmax(raw_scores, temperature=req.temperature)
+    for c, p in zip(final_items, probs):
+        c.prob = round(float(p), 6)
+
+    return RecommendResponse(items=final_items)
 
 
 @app.post("/ml/feedback")
 def feedback(req: FeedbackRequest):
-    print(f"LOG: User {req.user_id} {req.event} item {req.item_id}")
+    print(f"LOG: User {req.user_id} {req.event} item {req.item_id} (score_shown={req.score_shown})")
     return {"status": "logged"}
 
 
 @app.post("/ml/evaluate", response_model=EvaluateResponse)
 def evaluate(req: EvaluateRequest):
-    rec_resp: RecommendResponse = recommend(req)  # type: ignore
+    rec_resp = recommend(req)
 
     recommended_ids = [item.id for item in rec_resp.items]
-    relevant_ids: Set[int] = set(req.relevant_item_ids)
-    k = req.k
+    relevant_ids = set(req.relevant_item_ids)
 
-    ndcg_value = ndcg_at_k(recommended_ids, relevant_ids, k)
+    ndcg_value = ndcg_at_k(recommended_ids, relevant_ids, req.k)
 
     return EvaluateResponse(
         ndcg=ndcg_value,
