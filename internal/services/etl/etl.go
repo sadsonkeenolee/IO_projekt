@@ -204,6 +204,7 @@ func (e *Etl) Start() error {
 		path2 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_credits.csv")
 
 		start := time.Now()
+		// MOVIE PIPELINE START
 		mme1, err := e.Extract(&path1, database.TmdbMapFromStream)
 		if err != nil {
 			e.Logger.Fatalf("First extraction failed: %v\n", err)
@@ -286,43 +287,78 @@ func (e *Etl) Start() error {
 			e.Logger.Fatalf("Error while inserting: %v\n", err)
 		}
 
+		// MOVIE PIPELINE END
+		// BOOK PIPELINE START
+
+		path3 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "goodreads-books-data/books.csv")
+		bis, err := e.Extract(&path3, database.BookFromStream)
+		if err != nil {
+			e.Logger.Fatalf("First extraction failed: %v\n", err)
+		}
+		e.Logger.Println("Third extraction completed.")
+
+		bisp, err := database.NewInsertPipeline(database.BookInsertQuery, &bis)
+		if err != nil {
+			e.Logger.Printf("Cannot create pipeline, %v\n", err)
+		}
+
+		basp, err := database.NewInsertPipeline(database.BookAuthorsQuery, &bis)
+		if err != nil {
+			e.Logger.Printf("Cannot create pipeline, %v\n", err)
+		}
+
+		e.Load(&bisp, database.InsertIntoBooksChunked(e.DB, &e.MaxBatchSize))
+		e.Load(&basp, database.InsertIntoAuthorsChunked(e.DB, &e.MaxBatchSize))
+
 		if err = database.RebuildTable(e.DB, "movies", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding movies: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "languages", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding languages: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "keywords", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding keywords: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "genres", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding genres: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "countries", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding countries: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "movie2companies", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding movie2companies: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "movie2countries", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding movie2countries: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "movie2genres", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding movie2genres: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "movie2keywords", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding movie2keywords: %v\n", err)
 		}
 		if err = database.RebuildTable(e.DB, "movie2languages", "InnoDB"); err != nil {
-			e.Logger.Fatalf("Error while rebuilding: %v\n", err)
+			e.Logger.Fatalf("Error while rebuilding movie2languages: %v\n", err)
+		}
+
+		if err = database.RebuildTable(e.DB, "books", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding movies: %v\n", err)
+		}
+		if err = database.RebuildTable(e.DB, "authors", "InnoDB"); err != nil {
+			e.Logger.Fatalf("Error while rebuilding movies: %v\n", err)
+		}
+
+		tx, err := e.DB.Begin()
+		updateStmt, err := tx.Prepare(`update read_table set is_read=1,
+		 read_at=current_timestamp where is_read=0`)
+		if err != nil {
+			e.Logger.Println(err)
+		}
+		defer updateStmt.Close()
+		if _, err := updateStmt.Exec(); err != nil {
+			e.Logger.Println(err)
 		}
 		elapsed := time.Since(start)
-		// FIXME: Ten kod powoduje, ze update zajmuje za duzo czasu
-		// _, err = e.DB.Exec(`update read_table set is_read=1,
-		// read_at=current_timestamp where is_read=0`)
-		// if err != nil {
-		// 	e.Logger.Println(err)
-		// }
 		e.Logger.Printf("Loading completed: %v.\n", elapsed)
 	}
 	// v1 of api.

@@ -12,8 +12,8 @@ CREATE TABLE IF NOT EXISTS movies (
 	runtime smallint unsigned null,
 	status varchar(64) null,
 	tagline varchar(128) null,
-	vote_average float null,
-	vote_total bigint unsigned null,
+	vote_average float default 0,
+	vote_total bigint unsigned default 0,
 	
 	PRIMARY KEY (ID),
 	UNIQUE KEY (tmdb_id)

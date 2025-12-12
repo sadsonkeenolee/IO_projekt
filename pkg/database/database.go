@@ -106,7 +106,9 @@ func ParseDriverConfig(ci *services.ConnInfo) *gsdmysql.Config {
 }
 
 func RebuildTable(db *sql.DB, table, engine string) error {
-	_, err := db.Exec(`ALTER TABLE ? ENGINE = ?`, table, engine)
+	DatabaseLogger.Printf("Currently rebuilding table: %v\n", table)
+	// FIXME: Dziwny bug, wczesniej dzialalo
+	_, err := db.Exec(fmt.Sprintf("ALTER TABLE %v ENGINE = %v", table, engine))
 	if err != nil {
 		return err
 	}

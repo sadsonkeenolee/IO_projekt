@@ -108,12 +108,12 @@ func (f *Fetch) Start() error {
 		v1 := f.Router.Group("/v1")
 		// Id z bazy danych, zwraca konkretne id
 		v1.GET("api/tv/id/:id/", f.TvById)
-		v1.GET("api/book/id/:id/", func(ctx *gin.Context) { panic("Not implemented") })
+		v1.GET("api/book/id/:id/", f.BookById)
 		v1.GET("api/concert/id/:id/", func(ctx *gin.Context) { panic("Not implemented") })
 
 		// Zwraca wszystkie rekordy z pasujacym tytulem
 		v1.GET("api/tv/title/:title/", f.TvByTitle)
-		v1.GET("api/book/title/:title/", func(ctx *gin.Context) { panic("Not implemented") })
+		v1.GET("api/book/title/:title/", f.BookByTitle)
 		v1.GET("api/concert/title/:title/", func(ctx *gin.Context) { panic("Not implemented") })
 
 		v1.GET("api/", func(ctx *gin.Context) { panic("Not implemented") })
@@ -232,6 +232,74 @@ func (f *Fetch) TvById(ctx *gin.Context) {
 		return
 	}
 	services.NewGoodContentRequest(ctx, mq)
+}
+
+func (f *Fetch) BookById(ctx *gin.Context) {
+	bind := Id{}
+	if err := ctx.ShouldBindUri(&bind); err != nil {
+		f.Logger.Println(err)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	rows, err := f.DB.Query(`SELECT * FROM books WHERE ID=?`, bind.Content)
+	if err != nil {
+		f.Logger.Printf("couldn't find a movie with title=%v\n", bind.Content)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	defer rows.Close()
+	bqs := []database.BookQueryable{}
+	for rows.Next() {
+		var bq database.BookQueryable
+		if err := rows.Scan(
+			&bq.Id, &bq.Title, &bq.Rating, &bq.Isbn, &bq.Isbn13, &bq.Language,
+			&bq.Pages, &bq.TotalRating, &bq.ReleaseDate, &bq.Publisher,
+		); err != nil {
+			f.Logger.Println(err)
+			continue
+		}
+		bqs = append(bqs, bq)
+	}
+	services.NewGoodContentRequest(ctx, bqs)
+}
+
+func (f *Fetch) BookByTitle(ctx *gin.Context) {
+	bind := Title{Content: ""}
+	if err := ctx.ShouldBindUri(&bind); err != nil {
+		f.Logger.Println(err)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	if bind.Content == "" {
+		f.Logger.Println("couldn't parse title")
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	rows, err := f.DB.Query(`SELECT * FROM books WHERE title LIKE ?`, "%"+bind.Content+"%")
+	if err != nil {
+		f.Logger.Printf("couldn't find a movie with title=%v\n", bind.Content)
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	defer rows.Close()
+	bqs := []database.BookQueryable{}
+	for rows.Next() {
+		var bq database.BookQueryable
+		if err := rows.Scan(
+			&bq.Id, &bq.Title, &bq.Rating, &bq.Isbn, &bq.Isbn13, &bq.Language,
+			&bq.Pages, &bq.TotalRating, &bq.ReleaseDate, &bq.Publisher,
+		); err != nil {
+			f.Logger.Println(err)
+			continue
+		}
+		bqs = append(bqs, bq)
+	}
+	services.NewGoodContentRequest(ctx, bqs)
 }
 
 // ExposeConnInfo exposes configuration.
