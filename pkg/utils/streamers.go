@@ -9,7 +9,8 @@ import (
 
 func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 	if l == nil {
-		panic("CsvStreamer: No logging instance provided.")
+		l = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix)
+		l.Println("No logger provided, using a default one.")
 	}
 
 	fd, err := os.Open(*path)

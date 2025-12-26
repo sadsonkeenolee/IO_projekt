@@ -7,10 +7,9 @@ import (
 
 	"os"
 
-	"github.com/sadsonkeenolee/IO_projekt/internal/services/credentials"
-	_ "github.com/sadsonkeenolee/IO_projekt/internal/services/credentials"
-	"github.com/sadsonkeenolee/IO_projekt/internal/services/etl"
-	"github.com/sadsonkeenolee/IO_projekt/internal/services/fetch"
+	"github.com/sadsonkeenolee/IO_projekt/internal/services/auth"
+	"github.com/sadsonkeenolee/IO_projekt/internal/services/ingest"
+	"github.com/sadsonkeenolee/IO_projekt/internal/services/search"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 )
@@ -27,120 +26,137 @@ var serviceNameFlag = flag.String("service", "", "service name to run")
 
 const (
 	Invalid = iota
-	Credentials
-	Etl
-	Fetch
+	Auth
+	Ingest
+	Search
 )
 
-var serviceMap = map[string]uint{
-	"credentials": Credentials,
-	"etl":         Etl,
-	"fetch":       Fetch,
+var ServiceMap = map[string]uint{
+	"auth":   Auth,
+	"ingest": Ingest,
+	"search": Search,
+}
+
+var EnvVariables map[string]string = map[string]string{
+	"DOWNLOAD_DIR": InitPath("temp/"),
+	"MIGRATIONS":   InitJoinedPath("file:/", InitPath("api/migrations")),
+	"CONFIG":       InitPath("api/configs"),
+}
+
+func InitPath(subpath string) string {
+	fullPath, err := filepath.Abs(subpath)
+	if err != nil {
+		MainLogger.Printf("Error while parsing `%v`: %v.\n", subpath, err)
+		return ""
+	}
+	return fullPath
+}
+
+func InitJoinedPath(subpaths ...string) string {
+	if len(subpaths) <= 1 {
+		MainLogger.Printf("Got only `%v` paths.\n", len(subpaths))
+		return ""
+	}
+	fullPath := filepath.Join(subpaths...)
+	if fullPath == "" {
+		MainLogger.Printf("Couldn't join your paths: `%v`.\n", subpaths)
+		return ""
+	}
+	return fullPath
 }
 
 func main() {
 	flag.Parse()
-	// Define all the necessary environment variables.
-	configsPath, err := filepath.Abs("api/configs")
-	if err != nil {
-		MainLogger.Fatalf("Error while setting up the config file: %v\n", err)
+	if _, ok := ServiceMap[*serviceNameFlag]; !ok {
+		MainLogger.Fatalf("`%v` is an incorrect service, flag.\n", *serviceNameFlag)
 	}
 
-	downloadedDataPath, err := filepath.Abs("temp/")
-	if err != nil {
-		MainLogger.Fatalf("Error while setting up the temp directory: %v\n", err)
-	}
-	_ = os.Setenv("DOWNLOAD_DIR", downloadedDataPath)
-
-	// Here goes the rest of the program
-	var migrationsPath string
-	switch serviceMap[*serviceNameFlag] {
-	case Credentials:
-		migrationsPath, err = filepath.Abs("api/migrations/credentials")
-	case Etl:
-		migrationsPath, err = filepath.Abs("api/migrations/etl")
-	case Fetch:
-		migrationsPath, err = filepath.Abs("api/migrations/fetch")
-	default:
-		MainLogger.Fatalf("`%v` is an invalid name for a service\n", *serviceNameFlag)
+	// Set a correct migration file.
+	switch ServiceMap[*serviceNameFlag] {
+	case Auth:
+		EnvVariables["MIGRATIONS"] = InitJoinedPath(EnvVariables["MIGRATIONS"], "auth")
+	case Ingest:
+		EnvVariables["MIGRATIONS"] = InitJoinedPath(EnvVariables["MIGRATIONS"], "ingest")
+	case Search:
+		EnvVariables["MIGRATIONS"] = InitJoinedPath(EnvVariables["MIGRATIONS"], "search")
 	}
 
-	if err != nil {
-		MainLogger.Fatalf("Error while setting up the migration paths: %v\n", err)
-	}
-
-	migrationsPath = filepath.Join("file:/", migrationsPath)
-
-	switch serviceMap[*serviceNameFlag] {
-	case Credentials:
-		_ = os.Setenv("CREDENTIALS_CONFIG_DIR_PATH", configsPath)
-		_ = os.Setenv("CREDENTIALS_MIGRATIONS_DIR_PATH", migrationsPath)
-	case Etl:
-		_ = os.Setenv("ETL_CONFIG_DIR_PATH", configsPath)
-		_ = os.Setenv("ETL_MIGRATIONS_DIR_PATH", migrationsPath)
-	case Fetch:
-		_ = os.Setenv("FETCH_CONFIG_DIR_PATH", configsPath)
-		_ = os.Setenv("FETCH_MIGRATIONS_DIR_PATH", migrationsPath)
+	// Set all variables
+	for k, v := range EnvVariables {
+		_ = os.Setenv(k, v)
 	}
 
 	var s services.IService
-	switch serviceMap[*serviceNameFlag] {
-	case Credentials:
-		s = credentials.CredentialsBuilder(
-			credentials.WithLogger(
-				os.Stdout,
-				"Credentials Service:  ",
-				log.LstdFlags|log.Lmsgprefix,
-			),
-			credentials.WithRouter(),
-			credentials.WithConfig(
-				"CredentialsConfig",
-				"toml",
-				os.Getenv("CREDENTIALS_CONFIG_DIR_PATH"),
-			),
-			credentials.WithConnectionInfo("ConnInfo"),
-			credentials.WithDatabase(),
+	switch ServiceMap[*serviceNameFlag] {
+	case Auth:
+		l := services.NewLogger(
+			os.Stdout,
+			"Auth Service:  ",
+			log.LstdFlags|log.Lmsgprefix,
 		)
-	case Etl:
-		s = etl.EtlBuilder(
-			etl.WithLogger(
-				os.Stdout,
-				"Etl Service:  ",
-				log.LstdFlags|log.Lmsgprefix,
-			),
-			etl.WithRouter(),
-			etl.WithConfig(
-				"EtlConfig",
-				"toml",
-				os.Getenv("ETL_CONFIG_DIR_PATH"),
-			),
-			etl.WithConnectionInfo("ConnInfo"),
-			etl.WithDatabase(),
-			etl.WithBatchSize(64),
+		ge := services.NewRouter()
+		v := services.NewViper(
+			"AuthConfig",
+			"toml",
+			os.Getenv("CONFIG"),
 		)
-	case Fetch:
-		s = fetch.FetchBuilder(
-			fetch.WithLogger(
-				os.Stdout,
-				"Fetch Service:  ",
-				log.LstdFlags|log.Lmsgprefix,
-			),
-			fetch.WithRouter(),
-			fetch.WithConfig(
-				"FetchConfig",
-				"toml",
-				os.Getenv("FETCH_CONFIG_DIR_PATH"),
-			),
-			fetch.WithConnectionInfo("ConnInfo"),
-			fetch.WithDatabase(),
+		c := services.NewConnection("ConnInfo", v)
+		db := services.NewDatabase(c)
+		s = auth.AuthBuilder(
+			auth.WithLogger(l),
+			auth.WithRouter(ge),
+			auth.WithViper(v),
+			auth.WithConnectionInfo(c),
+			auth.WithDatabase(db))
+	case Ingest:
+		l := services.NewLogger(
+			os.Stdout,
+			"Ingest Service:  ",
+			log.LstdFlags|log.Lmsgprefix,
+		)
+		ge := services.NewRouter()
+		v := services.NewViper(
+			"IngestConfig",
+			"toml",
+			os.Getenv("CONFIG"),
+		)
+		c := services.NewConnection("ConnInfo", v)
+		db := services.NewDatabase(c)
+		s = ingest.IngestBuilder(
+			ingest.WithLogger(l),
+			ingest.WithRouter(ge),
+			ingest.WithViper(v),
+			ingest.WithConnectionInfo(c),
+			ingest.WithDatabase(db),
+			ingest.WithBatch(256),
+		)
+	case Search:
+		l := services.NewLogger(
+			os.Stdout,
+			"Search Service:  ",
+			log.LstdFlags|log.Lmsgprefix,
+		)
+		ge := services.NewRouter()
+		v := services.NewViper(
+			"SearchConfig",
+			"toml",
+			os.Getenv("CONFIG"),
+		)
+		c := services.NewConnection("ConnInfo", v)
+		db := services.NewDatabase(c)
+		s = search.SearchBuilder(
+			search.WithLogger(l),
+			search.WithRouter(ge),
+			search.WithViper(v),
+			search.WithConnectionInfo(c),
+			search.WithDatabase(db),
 		)
 	}
 
 	if *migrateFlag {
-		ci := s.ExposeConnInfo()
-
+		ci := s.ExposeConnection()
 		if *wipeFlag {
-			if err := utils.MigrateWipe(&migrationsPath, ci); err != nil {
+			if err := utils.MigrateWipe(os.Getenv("MIGRATIONS"), ci); err != nil {
 				MainLogger.Fatalf("The function failed: %v\n", err)
 			}
 			MainLogger.Println("Database wiped.")
@@ -148,7 +164,7 @@ func main() {
 		}
 
 		if err := utils.MigrateDatabase(*versionFlag, ci,
-			&migrationsPath, upFlag, forceFlag); err != nil {
+			os.Getenv("MIGRATIONS"), upFlag, forceFlag); err != nil {
 			MainLogger.Fatalf("The function failed: %v\n", err)
 		}
 		MainLogger.Println("Migration completed.")
@@ -156,7 +172,7 @@ func main() {
 	}
 
 	MainLogger.Printf("%v is starting...\n", s)
-	err = s.Start()
+	err := s.Start()
 	MainLogger.Printf("Server returned value: %v.\n", err)
 }
 

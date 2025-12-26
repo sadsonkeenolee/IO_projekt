@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"log"
 	"os"
-
-	gsdmysql "github.com/go-sql-driver/mysql"
-	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
+	"slices"
+	"strings"
 )
 
 var DatabaseLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
@@ -21,37 +20,40 @@ const (
 type DatasetFileMetadata struct {
 	Directory string
 	Type      string
-	IsRead    bool
 	CreatedAt *string
 	ReadAt    *string
 }
 
-// Query defines reusable data structure for making database queries
-type Query struct {
-	Content string
-	Fields  string
+// Table defines tables present in the database
+type Table struct {
+	// Table name
+	Name string
+	// Query fields (?, ?, ..., ?)
+	QueryField string
+	// Table fields (ID, etc.)
+	Fields []string
+}
+
+func NewTable(name string, fields []string) *Table {
+	return &Table{
+		Name:       name,
+		Fields:     fields,
+		QueryField: InitQueryFields(len(fields)),
+	}
 }
 
 // InsertPipeline defines pipeline for inserting elements to the given database.
 type InsertPipeline struct {
-	Query
+	// Track which data was inserted
 	Tracker int
 	Data    *[]*Insertable
 }
 
-func NewInsertPipeline(q Query, data *[]*Insertable) (Insertable, error) {
-	if len(q.Content) == 0 {
-		return nil, fmt.Errorf("incorrect query (length 0)")
+func NewInsertPipeline(data *[]*Insertable) (Insertable, error) {
+	if len(*data) <= 0 {
+		return nil, fmt.Errorf("no data (length %v)", len(*data))
 	}
-	if len(q.Fields) == 0 {
-		return nil, fmt.Errorf("incorrect fields (length 0)")
-	}
-	if len(*data) == 0 {
-		return nil, fmt.Errorf("no data (length 0)")
-	}
-
 	return &InsertPipeline{
-		Query:   q,
 		Tracker: 0,
 		Data:    data,
 	}, nil
@@ -59,55 +61,54 @@ func NewInsertPipeline(q Query, data *[]*Insertable) (Insertable, error) {
 
 // Next checks if there is a next item in a pipeline, if true returns the
 // element
-func (ip *InsertPipeline) Next() (*Insertable, bool) {
+func (ip *InsertPipeline) Next() *Insertable {
 	if ip.Tracker+1 >= len(*ip.Data) {
-		return nil, false
+		return nil
 	}
 	ip.Tracker++
-	return (*ip.Data)[ip.Tracker], true
+	return (*ip.Data)[ip.Tracker]
 }
 
 func (ip *InsertPipeline) Reset() {
 	ip.Tracker = 0
 }
 
-// func (ip *InsertPipeline) ChunkData(chunkSize int) [][]*Insertable {
-// 	var chunked [][]*Insertable
-// 	for idx := 0; idx < len(*ip.Data); idx += chunkSize {
-// 		end := min(len(*ip.Data), idx+chunkSize)
-// 		chunked = append(chunked, (*ip.Data)[idx:end])
-// 	}
-// 	return chunked
-// }
+func (ip *InsertPipeline) IsInsertable() (*Table, bool) {
+	// Pipeline itself is not insertable, however its element are.
+	return nil, true
+}
 
-func (ip *InsertPipeline) IsInsertable() bool {
-	// cannot insert pipeline, but its elements
-	return false
+func (ip *InsertPipeline) ConstructInsertQuery() string {
+	return ""
 }
 
 type Insertable interface {
-	// Marker interface for a struct that is an Insertable item.
-	IsInsertable() bool
+	// IsInsertable tells if the item is insertable and returns table information
+	IsInsertable() (*Table, bool)
+	// This should include only statement and table fields, e.g.:
+	// INSERT INTO table(ID, revenue, ...) VALUES
+	ConstructInsertQuery() string
 }
 
-type Queryable interface {
-	// Marker interface for a struct that is a Queryable item.
-	IsQueryable() bool
+type Selectable interface {
+	// IsSelectable tells if the item is selectable and returns a query how to
+	// select it.
+	IsSelectable() (*Table, bool)
+	// Only SELECT is permitted, no statements like INSERT, etc.
+	ConstructSelectQuery() string
 }
 
-func ParseDriverConfig(ci *services.ConnInfo) *gsdmysql.Config {
-	cfg := gsdmysql.NewConfig()
-	cfg.User = ci.Username
-	cfg.Passwd = ci.Password
-	cfg.Net = "tcp"
-	cfg.Addr = fmt.Sprintf("%v:%v", ci.Ip, ci.Port)
-	cfg.DBName = ci.Name
-	return cfg
+func InitQueryFields(cnt int) string {
+	return fmt.Sprintf("(%v)", strings.Join(slices.Repeat([]string{"?"}, cnt), ","))
+}
+
+func JoinTableFields(t *Table) string {
+	return fmt.Sprintf("(%v)", strings.Join(t.Fields, ","))
+
 }
 
 func RebuildTable(db *sql.DB, table, engine string) error {
 	DatabaseLogger.Printf("Currently rebuilding table: %v\n", table)
-	// FIXME: Dziwny bug, wczesniej dzialalo
 	_, err := db.Exec(fmt.Sprintf("ALTER TABLE %v ENGINE = %v", table, engine))
 	if err != nil {
 		return err

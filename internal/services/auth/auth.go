@@ -1,11 +1,10 @@
 // Package `credentials` implements the login and register logic for the
 // service.
-package credentials
+package auth
 
 import (
 	"database/sql"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -23,92 +22,62 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/mysql"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/github"
-	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
 
 // Use it as global logger that will log everything that happens globally
-var CredentialsLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
+var AuthLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
 var SecretTokenKey = []byte("bardzo_tajny_token_nie_udostepniac")
 
 const (
 	DefaultExpirationTime = 3600
 )
 
-type Credentials struct {
+type AuthService struct {
 	services.Service
 }
 
-func WithLogger(out io.Writer, prefix string, flags int) func(c *Credentials) {
-	return func(c *Credentials) {
-		if flags&log.Llongfile == log.Llongfile {
-			CredentialsLogger.Fatalln("`log.Llongfile` flag is not allowed for the service purposes.")
-		}
-		if out == os.Stderr {
-			CredentialsLogger.Fatalln("`os.Stderr` io.Writer is not allowed for the service purposes.")
-		}
-		c.Logger = log.New(out, prefix, flags)
+func WithLogger(l *log.Logger) func(a *AuthService) {
+	return func(a *AuthService) {
+		a.Logger = l
 	}
 }
 
-func WithRouter(opts ...gin.OptionFunc) func(c *Credentials) {
-	return func(c *Credentials) {
-		c.Router = gin.Default(opts...)
+func WithRouter(ge *gin.Engine) func(a *AuthService) {
+	return func(a *AuthService) {
+		a.Router = ge
 	}
 }
 
-func WithConfig(filename, ext string, cfgPaths ...string) func(c *Credentials) {
-	return func(c *Credentials) {
-		v := viper.New()
-		v.SetConfigName(filename)
-		v.SetConfigType(ext)
-		for _, cfgPath := range cfgPaths {
-			v.AddConfigPath(cfgPath)
-		}
-
-		if err := v.ReadInConfig(); err != nil {
-			CredentialsLogger.Fatalf("Got error while parsing config file: %v\n", err)
-		}
-		c.ConfigReader = v
+func WithViper(v *viper.Viper) func(a *AuthService) {
+	return func(a *AuthService) {
+		a.ConfigReader = v
 	}
 }
 
-func WithConnectionInfo(tableName string) func(c *Credentials) {
-	return func(c *Credentials) {
-		if c.ConfigReader == nil {
-			CredentialsLogger.Fatalln("Before parsing a connection info, initialize your config reader.")
-		}
-
-		var ci services.ConnInfo
-		if err := c.ConfigReader.UnmarshalKey(tableName, &ci); err != nil {
-			CredentialsLogger.Fatalf("Got error while unmarshalling: %v\n", err)
-		}
-		c.ConnInfo = &ci
+func WithConnectionInfo(c *services.Connection) func(a *AuthService) {
+	return func(a *AuthService) {
+		a.ConnInfo = c
 	}
 }
 
-func WithDatabase() func(c *Credentials) {
-	return func(c *Credentials) {
-		cfgParsed := database.ParseDriverConfig(c.ConnInfo)
-		db, err := sql.Open(c.ConnInfo.Type, cfgParsed.FormatDSN())
-		if err != nil {
-			CredentialsLogger.Fatalf("Got error while creating a database driver: %v\n", err)
-		}
-		c.DB = db
+func WithDatabase(db *sql.DB) func(a *AuthService) {
+	return func(a *AuthService) {
+		a.DB = db
 	}
 }
 
-func CredentialsBuilder(opts ...func(*Credentials)) services.IService {
-	c := &Credentials{}
+func AuthBuilder(opts ...func(*AuthService)) services.IService {
+	c := &AuthService{}
 	for _, opt := range opts {
 		opt(c)
 	}
 	return c
 }
 
-func (c *Credentials) Start() error {
+func (c *AuthService) Start() error {
 	if err := c.HealthCheck(); err != nil {
-		CredentialsLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
+		AuthLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
 	}
 	// v1 of api.
 	{
@@ -135,14 +104,14 @@ func (c *Credentials) Start() error {
 
 // validateUser extracts password from database and checks if the user exists.
 // Then two password are compared to each other - if success, nil is returned.
-func (c *Credentials) validateUser(fetchedPassword, requestPassword []byte) error {
+func (c *AuthService) validateUser(fetchedPassword, requestPassword []byte) error {
 	if err := bcrypt.CompareHashAndPassword(fetchedPassword, requestPassword); err != nil {
 		return fmt.Errorf("user credentials don't match")
 	}
 	return nil
 }
 
-func (c *Credentials) HealthCheck() error {
+func (c *AuthService) HealthCheck() error {
 	if c.Logger == nil {
 		return fmt.Errorf("No logger setup")
 	}
@@ -166,7 +135,7 @@ func (c *Credentials) HealthCheck() error {
 }
 
 // OnUserLogin implements logic for logging.
-func (c *Credentials) OnUserLogin(ctx *gin.Context) {
+func (c *AuthService) OnUserLogin(ctx *gin.Context) {
 	var ulr services.UserLoginRequest
 	if err := ctx.ShouldBindJSON(&ulr); err != nil {
 		c.Logger.Printf(services.JsonParsing, err)
@@ -218,7 +187,7 @@ func (c *Credentials) OnUserLogin(ctx *gin.Context) {
 }
 
 // OnUserRegister implements logic when user tries to register.
-func (c *Credentials) OnUserRegister(ctx *gin.Context) {
+func (c *AuthService) OnUserRegister(ctx *gin.Context) {
 	var u services.UserRegisterRequest
 	if err := ctx.ShouldBindJSON(&u); err != nil {
 		c.Logger.Printf(services.JsonParsing, err)
@@ -294,7 +263,7 @@ func (c *Credentials) OnUserRegister(ctx *gin.Context) {
 	})
 }
 
-func (c *Credentials) GenerateSessionToken(username, password string) string {
+func (c *AuthService) GenerateSessionToken(username, password string) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
 			"username": username,
@@ -307,11 +276,11 @@ func (c *Credentials) GenerateSessionToken(username, password string) string {
 	return tok
 }
 
-// ExposeConnInfo exposes configuration.
-func (c *Credentials) ExposeConnInfo() *services.ConnInfo {
+// ExposeConnection exposes configuration.
+func (c *AuthService) ExposeConnection() *services.Connection {
 	return c.ConnInfo
 }
 
-func (c *Credentials) String() string {
+func (c *AuthService) String() string {
 	return "Credentials"
 }

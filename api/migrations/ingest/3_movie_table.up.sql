@@ -1,22 +1,21 @@
-CREATE TABLE IF NOT EXISTS movies (
+create table if not exists movies (
 	ID bigint unsigned auto_increment,
 	budget bigint unsigned null,
 	tmdb_id bigint unsigned not null,
-	-- original_lang_id nie ma tabeli, dodac FK pozniej.
-	original_lang_id char(2) null,
+	language char(2) null,
 	title varchar(256) not null,
 	overview varchar(2048) null,
 	popularity float null,
 	release_date date null,
 	revenue bigint null,
 	runtime smallint unsigned null,
-	status varchar(64) null,
+	status enum ('Released', 'Rumored', 'Post Production', 'N/A') default 'N/A',
 	tagline varchar(128) null,
-	vote_average float default 0,
-	vote_total bigint unsigned default 0,
+	rating float default 0,
+	total_ratings bigint unsigned default 0,
 	
-	PRIMARY KEY (ID),
-	UNIQUE KEY (tmdb_id)
+	primary key (ID),
+	unique key (tmdb_id)
 )
 ENGINE=InnoDB
 DEFAULT CHARSET=utf8mb4

@@ -16,17 +16,6 @@ const (
 	NAuthorsFields   int = 2
 )
 
-var (
-	BookInsertQuery Query = Query{
-		Content: `INSERT IGNORE INTO books(ID, title, rating, isbn, isbn13, language_code, pages, total_ratings, release_date, publisher) VALUES`,
-		Fields:  `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	}
-	BookAuthorsQuery Query = Query{
-		Content: `INSERT IGNORE INTO authors(book_id, author) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-)
-
 var BookIndices map[string]int = map[string]int{
 	"BookId":      0,
 	"Title":       1,
@@ -55,17 +44,68 @@ type BookInsertable struct {
 	Publisher   string    `json:"publisher"`
 }
 
-type BookQueryable struct {
+type AuthorInsertable struct {
+	BookId uint64
+	Name   string
+}
+
+func (ai *AuthorInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"authors",
+		[]string{"book_id", "author"},
+	), true
+
+}
+
+func (ai *AuthorInsertable) ConstructInsertQuery() string {
+	t, ok := ai.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+func (bi *BookInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"books",
+		[]string{"title", "rating", "isbn", "isbn13", "language",
+			"pages", "total_ratings", "release_date", "publisher"},
+	), true
+
+}
+
+func (bi *BookInsertable) ConstructInsertQuery() string {
+	t, ok := bi.IsInsertable()
+	if !ok {
+		return ""
+	}
+
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type BookSelectable struct {
 	Id uint64 `json:"id"`
 	BookInsertable
 }
 
-func (bq *BookQueryable) IsQueryable() bool {
-	return true
+func (bq *BookSelectable) IsSelectable() (*Table, bool) {
+	return NewTable(
+		"books",
+		[]string{"ID", "title", "rating", "isbn", "isbn13", "language",
+			"pages", "total_ratings", "release_date", "publisher"},
+	), true
 }
 
-func (bi *BookInsertable) IsInsertable() bool {
-	return true
+func (bq *BookSelectable) ConstructSelectQuery() string {
+	//t, ok := bq.IsSelectable()
+	_, ok := bq.IsSelectable()
+	if !ok {
+		return ""
+	}
+	// FIXME: Change it later
+	return "call get_movie_by_id(?)"
 }
 
 func CastFromBookInsertableToInsertable(item *BookInsertable) (Insertable, error) {
@@ -97,7 +137,7 @@ func BookFromStream(stream *[]string, data *Insertable) error {
 	target.Language = s[BookIndices["Language"]]
 	target.Pages, _ = strconv.ParseInt(s[BookIndices["Pages"]], 10, 64)
 	target.TotalRating, _ = strconv.ParseInt(s[BookIndices["TotalRating"]], 10, 64)
-	target.ReleaseDate, _ = time.Parse("2006-01-02", s[TmdbIndices["ReleaseDate"]])
+	target.ReleaseDate, _ = time.Parse("2006-01-02", s[StreamTmdbIndices["ReleaseDate"]])
 	target.Publisher = s[BookIndices["Publisher"]]
 	*data = target
 	return nil
@@ -105,10 +145,6 @@ func BookFromStream(stream *[]string, data *Insertable) error {
 }
 
 func InsertIntoAuthorsChunked(db *sql.DB, chunkSize *int) func(data *Insertable) error {
-	idTracker := struct {
-		mu      sync.Mutex
-		idsSeen map[uint64]bool
-	}{idsSeen: make(map[uint64]bool)}
 	return func(i *Insertable) error {
 		ip, ok := (*i).(*InsertPipeline)
 		if !ok {
@@ -123,7 +159,9 @@ func InsertIntoAuthorsChunked(db *sql.DB, chunkSize *int) func(data *Insertable)
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
-					// TODO: Znalezc sposob na znalezienie dlugosci tego
+					template := AuthorInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = []string{}
 					var argFields []any = []any{}
 					for _, item := range chunk {
@@ -131,17 +169,8 @@ func InsertIntoAuthorsChunked(db *sql.DB, chunkSize *int) func(data *Insertable)
 						if !ok {
 							continue
 						}
-
-						idTracker.mu.Lock()
-						if _, ok := idTracker.idsSeen[bi.BookId]; ok {
-							idTracker.mu.Unlock()
-							continue
-						}
-
-						idTracker.idsSeen[bi.BookId] = true
-						idTracker.mu.Unlock()
 						for _, author := range bi.Authors {
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, bi.BookId)
 							argFields = append(argFields, author)
 						}
@@ -149,7 +178,7 @@ func InsertIntoAuthorsChunked(db *sql.DB, chunkSize *int) func(data *Insertable)
 
 					// here put insert statements
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -181,6 +210,9 @@ func InsertIntoBooksChunked(db *sql.DB, chunkSize *int) func(data *Insertable) e
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					i := chunk[0]
+					t, _ := (*i).IsInsertable()
+					query := (*i).ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, NBookFields)
 					var argFields []any = make([]any, 0, NBookFields*(*chunkSize))
 					for _, item := range chunk {
@@ -196,7 +228,7 @@ func InsertIntoBooksChunked(db *sql.DB, chunkSize *int) func(data *Insertable) e
 						}
 						idTracker.idsSeen[bi.BookId] = true
 						idTracker.mu.Unlock()
-						queryFields = append(queryFields, ip.Fields)
+						queryFields = append(queryFields, t.QueryField)
 						argFields = append(argFields, bi.BookId)
 						argFields = append(argFields, bi.Title)
 						argFields = append(argFields, bi.Rating)
@@ -211,7 +243,7 @@ func InsertIntoBooksChunked(db *sql.DB, chunkSize *int) func(data *Insertable) e
 
 					// here put insert statements
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)

@@ -7,12 +7,11 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/mysql"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
-	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
 
-func createDriver(migrationsPath *string, ci *services.ConnInfo) (*migrate.Migrate, error) {
-	cfg := database.ParseDriverConfig(ci)
+func createDriver(migrationsPath string, ci *services.Connection) (*migrate.Migrate, error) {
+	cfg := services.ParseDriverConfig(ci)
 	url := fmt.Sprintf("%v?multiStatements=true", cfg.FormatDSN())
 	db, err := sql.Open(ci.Type, url)
 	if err != nil {
@@ -23,7 +22,7 @@ func createDriver(migrationsPath *string, ci *services.ConnInfo) (*migrate.Migra
 		return nil, fmt.Errorf("couldn't create a driver, reason: %v\n", err)
 	}
 	m, err := migrate.NewWithDatabaseInstance(
-		*migrationsPath,
+		migrationsPath,
 		ci.Type,
 		driver,
 	)
@@ -33,7 +32,7 @@ func createDriver(migrationsPath *string, ci *services.ConnInfo) (*migrate.Migra
 	return m, nil
 }
 
-func MigrateWipe(migrationsPath *string, ci *services.ConnInfo) error {
+func MigrateWipe(migrationsPath string, ci *services.Connection) error {
 	m, err := createDriver(migrationsPath, ci)
 	if err != nil {
 		return err
@@ -48,8 +47,8 @@ func MigrateWipe(migrationsPath *string, ci *services.ConnInfo) error {
 // If isUp is true, then the state of the database is up by version variable.
 // If isUp is false, then the state of the database is down by version variable.
 // If shouldForce is true, then the migration will be forced.
-func MigrateDatabase(version int, ci *services.ConnInfo,
-	migrationsPath *string, isUp *bool, shouldForce *bool) error {
+func MigrateDatabase(version int, ci *services.Connection,
+	migrationsPath string, isUp *bool, shouldForce *bool) error {
 	m, err := createDriver(migrationsPath, ci)
 
 	// sets to the given version

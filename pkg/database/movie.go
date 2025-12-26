@@ -29,7 +29,7 @@ const (
 	NMovie2CountriesFields int = 2
 )
 
-var TmdbIndices map[string]int = map[string]int{
+var StreamTmdbIndices map[string]int = map[string]int{
 	"Budget":              0,
 	"Genre":               1,
 	"MovieId":             3,
@@ -56,58 +56,6 @@ var TmdbCreditsIndices map[string]int = map[string]int{
 	"Crew":    3,
 }
 
-var (
-	MovieInsertQuery Query = Query{
-		Content: `INSERT IGNORE INTO movies(
-		budget,tmdb_id,original_lang_id,title,overview,
-		popularity,release_date,revenue,runtime,status,tagline,
-		vote_average,vote_total) 
-		VALUES`,
-		Fields: `(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-	}
-	LanguagesInsertQuery Query = Query{
-		Content: `INSERT IGNORE INTO languages(encoding, name) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	KeywordsInsertQuery Query = Query{
-		Content: `INSERT IGNORE INTO keywords(ID, name) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	GenreInsertQuery Query = Query{
-		Content: `INSERT IGNORE INTO genres(ID, name) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	CountryInsertQuery Query = Query{
-		Content: `INSERT IGNORE INTO countries(encoding, name) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	CompananyInsertQuery Query = Query{
-		Content: `INSERT IGNORE INTO companies(ID, name) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	Movie2LanguagesInsertQuery = Query{
-		Content: `INSERT IGNORE INTO movie2languages(movie_id, language_id) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	Movie2KeywordsInsertQuery = Query{
-		Content: `INSERT IGNORE INTO movie2keywords(movie_id, keyword_id) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	Movie2GenresInsertQuery = Query{
-		Content: `INSERT IGNORE INTO movie2genres(movie_id, genre_id) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-	Movie2CountriesInsertQuery = Query{
-		Content: `INSERT IGNORE INTO movie2countries(movie_id, country_en) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-
-	Movie2CompaniesInsertQuery = Query{
-		Content: `INSERT IGNORE INTO movie2companies(movie_id, company_id) VALUES`,
-		Fields:  `(?, ?)`,
-	}
-)
-
 type IdName struct {
 	Id   uint64 `json:"id"`
 	Name string `json:"name"`
@@ -118,25 +66,225 @@ type CodeCountry struct {
 	Name     string `json:"name"`
 }
 
-type CodeLanguage struct {
+func (cc *CodeCountry) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"countries",
+		[]string{"encoding", "country"},
+	), true
+}
+
+func (cc *CodeCountry) ConstructInsertQuery() string {
+	t, ok := cc.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type LanguageEncoding struct {
 	Encoding string `json:"iso_639_1"`
 	Name     string `json:"name"`
 }
 
-type Genre = IdName
-type Keywords = IdName
-type ProductionCompanies = IdName
+func (le *LanguageEncoding) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"languages",
+		[]string{"encoding", "language"},
+	), true
+}
 
+func (le *LanguageEncoding) ConstructInsertQuery() string {
+	t, ok := le.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type Genre struct {
+	IdName
+}
+
+func (g *Genre) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"genres",
+		[]string{"ID", "genre"},
+	), true
+}
+
+func (g *Genre) ConstructInsertQuery() string {
+	t, ok := g.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type Keywords struct {
+	IdName
+}
+
+func (k *Keywords) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"keywords",
+		[]string{"ID", "keyword"},
+	), true
+}
+
+func (k *Keywords) ConstructInsertQuery() string {
+	t, ok := k.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type ProductionCompaniesInsertable struct {
+	IdName
+}
+
+func (pc *ProductionCompaniesInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"companies",
+		[]string{"ID", "company"},
+	), true
+}
+
+func (pc *ProductionCompaniesInsertable) ConstructInsertQuery() string {
+	t, ok := pc.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type Movie2GenresInsertable struct {
+	MovieId uint64
+	GenreId uint64
+}
+
+func (m2g *Movie2GenresInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"movie2genres",
+		[]string{"movie_id", "genre_id"},
+	), true
+}
+
+func (m2g *Movie2GenresInsertable) ConstructInsertQuery() string {
+	t, ok := m2g.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type Movie2KeywordsInsertable struct {
+	MovieId   uint64
+	KeywordId uint64
+}
+
+func (m2k *Movie2KeywordsInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"movie2keywords",
+		[]string{"movie_id", "keyword_id"},
+	), true
+}
+
+func (m2k *Movie2KeywordsInsertable) ConstructInsertQuery() string {
+	t, ok := m2k.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type Movie2LanguagesInsertable struct {
+	MovieId  uint64
+	Language string
+}
+
+func (m2l *Movie2LanguagesInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"movie2languages",
+		[]string{"movie_id", "language_encoding"},
+	), true
+}
+
+func (m2l *Movie2LanguagesInsertable) ConstructInsertQuery() string {
+	t, ok := m2l.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type Movie2CountriesInsertable struct {
+	MovieId uint64
+	Country string
+}
+
+func (m2c *Movie2CountriesInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"movie2countries",
+		[]string{"movie_id", "country_encoding"},
+	), true
+}
+
+func (m2c *Movie2CountriesInsertable) ConstructInsertQuery() string {
+	t, ok := m2c.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type Movie2CompaniesInsertable struct {
+	MovieId   uint64
+	CompanyId string
+}
+
+func (m2c *Movie2CompaniesInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"movie2companies",
+		[]string{"movie_id", "company_id"},
+	), true
+}
+
+func (m2c *Movie2CompaniesInsertable) ConstructInsertQuery() string {
+	t, ok := m2c.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+// TODO: Dodac tabele crew
 type CastCrewMetadata struct {
 	MovieId uint64
 	Cast    []CastMember
 	Crew    []CrewMember
 }
 
-func (ccm *CastCrewMetadata) IsInsertable() bool {
+func (ccm *CastCrewMetadata) IsInsertable() (*Table, bool) {
 	// assume the struct is insertable, while batching inserts, let it fail on the
 	// inserting level
-	return true
+	//FIXME: Na razie nie jest insertable
+	return nil, false
+}
+
+func (ccm *CastCrewMetadata) ConstructInsertQuery() string {
+	//FIXME: Na razie nie jest insertable
+	return ""
 }
 
 type CastMember struct {
@@ -159,39 +307,87 @@ type CrewMember struct {
 }
 
 type MovieInsertable struct {
-	Budget              uint64                `json:"budget"`
-	Genres              []Genre               `json:"genres"`
-	MovieId             uint64                `json:"movie_id"`
-	Keywords            []Keywords            `json:"keywords"`
-	OriginalLanguage    string                `json:"original_language"`
-	Title               string                `json:"title"`
-	Overview            string                `json:"overview"`
-	Popularity          float64               `json:"popularity"`
-	ProductionCompanies []ProductionCompanies `json:"production_companies"`
-	ProductionCountries []CodeCountry         `json:"production_countries"`
-	ReleaseDate         time.Time             `json:"release_date"`
-	Revenue             int64                 `json:"revenue"`
-	Runtime             int64                 `json:"runtime"`
-	SpokenLanguages     []CodeLanguage        `json:"spoken_languages"`
-	Status              string                `json:"status"`
-	Tagline             string                `json:"tagline"`
-	AverageScore        float64               `json:"average_score"`
-	TotalScore          uint64                `json:"total_score"`
-	Cast                []CastMember          `json:"cast"`
-	Crew                []CrewMember          `json:"crew"`
+	Budget              uint64                          `json:"budget"`
+	Genres              []Genre                         `json:"genres"`
+	MovieId             uint64                          `json:"movie_id"`
+	Keywords            []Keywords                      `json:"keywords"`
+	OriginalLanguage    string                          `json:"original_language"`
+	Title               string                          `json:"title"`
+	Overview            string                          `json:"overview"`
+	Popularity          float64                         `json:"popularity"`
+	ProductionCompanies []ProductionCompaniesInsertable `json:"production_companies"`
+	ProductionCountries []CodeCountry                   `json:"production_countries"`
+	ReleaseDate         time.Time                       `json:"release_date"`
+	Revenue             int64                           `json:"revenue"`
+	Runtime             int64                           `json:"runtime"`
+	SpokenLanguages     []LanguageEncoding              `json:"spoken_languages"`
+	Status              string                          `json:"status"`
+	Tagline             string                          `json:"tagline"`
+	AverageScore        float64                         `json:"rating"`
+	TotalScore          uint64                          `json:"total_ratings"`
+	Cast                []CastMember                    `json:"cast"`
+	Crew                []CrewMember                    `json:"crew"`
 }
 
-func (mi *MovieInsertable) IsInsertable() bool {
-	return true
+func (mi *MovieInsertable) IsInsertable() (*Table, bool) {
+	return NewTable(
+		"movies",
+		[]string{"budget", "tmdb_id", "language", "title", "overview",
+			"popularity", "release_date", "revenue", "runtime", "status", "tagline",
+			"rating", "total_ratings"},
+	), true
 }
 
-type MovieQueryable struct {
+func (mi *MovieInsertable) ConstructInsertQuery() string {
+	t, ok := mi.IsInsertable()
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("INSERT IGNORE INTO %v%v VALUES ", t.Name,
+		JoinTableFields(t))
+}
+
+type MovieSelectable struct {
 	Id uint64 `json:"id"`
 	MovieInsertable
 }
 
-func (mq *MovieQueryable) Queryable() bool {
-	return true
+func (mq *MovieSelectable) IsSelectable() (*Table, bool) {
+	return NewTable(
+		"movies",
+		[]string{"ID", "budget", "tmdb_id", "language", "title", "overview",
+			"popularity", "release_date", "revenue", "runtime", "status", "tagline",
+			"rating", "total_ratings"},
+	), true
+}
+
+func (mq *MovieSelectable) ConstructSelectQuery() string {
+	_, ok := mq.IsSelectable()
+	if !ok {
+		return ""
+	}
+	return "call get_movie_by_id(?)"
+}
+
+type Movie2CompanySelectable struct {
+	MovieId uint64
+	Company string
+}
+
+func (m2c *Movie2CompanySelectable) IsSelectable() (*Table, bool) {
+	return NewTable(
+		// FIXME:
+		"JoinedTable",
+		[]string{"movie_id", "company"},
+	), true
+}
+
+func (m2c *Movie2CompanySelectable) ConstructSelectQuery() string {
+	_, ok := m2c.IsSelectable()
+	if !ok {
+		return ""
+	}
+	return "call get_production_companies(?)"
 }
 
 func CastFromAnyToInsertable(item *any) (Insertable, error) {
@@ -265,6 +461,9 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					i := chunk[0]
+					t, _ := (*i).IsInsertable()
+					query := (*i).ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NMovieFields*(*chunkSize))
 					for _, item := range chunk {
@@ -272,7 +471,6 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 						if !ok {
 							continue
 						}
-
 						idTracker.mu.Lock()
 						if _, ok := idTracker.idsSeen[mi.MovieId]; ok {
 							idTracker.mu.Unlock()
@@ -280,7 +478,7 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 						}
 						idTracker.idsSeen[mi.MovieId] = true
 						idTracker.mu.Unlock()
-						queryFields = append(queryFields, ip.Fields)
+						queryFields = append(queryFields, t.QueryField)
 						argFields = append(argFields, mi.Budget)
 						argFields = append(argFields, mi.MovieId)
 						argFields = append(argFields, mi.OriginalLanguage)
@@ -298,7 +496,7 @@ func InsertIntoMoviesChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 
 					// here put insert statements
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -327,10 +525,12 @@ func InsertIntoLanguagesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 		defer close(c)
 		c <- true
 		var wg sync.WaitGroup
-
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := LanguageEncoding{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NLanguageFields*(*chunkSize))
 					for _, item := range chunk {
@@ -338,7 +538,6 @@ func InsertIntoLanguagesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 						if !ok {
 							continue
 						}
-
 						for _, sl := range mi.SpokenLanguages {
 							encodingTracker.mu.Lock()
 							if _, ok := encodingTracker.encodingsSeen[sl.Name]; ok {
@@ -347,13 +546,13 @@ func InsertIntoLanguagesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 							}
 							encodingTracker.encodingsSeen[sl.Encoding] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, sl.Encoding)
 							argFields = append(argFields, sl.Name)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -385,6 +584,9 @@ func InsertIntoKeywordsChunked(db *sql.DB, chunkSize *int) func(data *Insertable
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Keywords{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NKeywordFields*(*chunkSize))
 					for _, item := range chunk {
@@ -401,14 +603,14 @@ func InsertIntoKeywordsChunked(db *sql.DB, chunkSize *int) func(data *Insertable
 							}
 							encodingTracker.keywordsSeen[k.Id] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, k.Id)
 							argFields = append(argFields, k.Name)
 						}
 					}
 
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -440,6 +642,9 @@ func InsertIntoGenresChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Genre{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NGenreFields*(*chunkSize))
 					for _, item := range chunk {
@@ -457,14 +662,14 @@ func InsertIntoGenresChunked(db *sql.DB, chunkSize *int) func(data *Insertable) 
 							}
 							encodingTracker.genresSeen[g.Id] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, g.Id)
 							argFields = append(argFields, g.Name)
 						}
 					}
 
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -496,6 +701,9 @@ func InsertIntoCountriesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := CodeCountry{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NCountryFields*(*chunkSize))
 					for _, item := range chunk {
@@ -503,7 +711,6 @@ func InsertIntoCountriesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 						if !ok {
 							continue
 						}
-
 						for _, pc := range mi.ProductionCountries {
 							encodingTracker.mu.Lock()
 							ok := encodingTracker.countriesSeen[pc.Name]
@@ -513,14 +720,14 @@ func InsertIntoCountriesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 							}
 							encodingTracker.countriesSeen[pc.Encoding] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, pc.Encoding)
 							argFields = append(argFields, pc.Name)
 						}
 					}
 
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -552,6 +759,9 @@ func InsertIntoCompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := ProductionCompaniesInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NCompanyFields*(*chunkSize))
 					for _, item := range chunk {
@@ -559,7 +769,6 @@ func InsertIntoCompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 						if !ok {
 							continue
 						}
-
 						for _, pc := range mi.ProductionCompanies {
 							encodingTracker.mu.Lock()
 							ok := encodingTracker.companiesSeen[pc.Id]
@@ -569,13 +778,13 @@ func InsertIntoCompaniesChunked(db *sql.DB, chunkSize *int) func(data *Insertabl
 							}
 							encodingTracker.companiesSeen[pc.Id] = true
 							encodingTracker.mu.Unlock()
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, pc.Id)
 							argFields = append(argFields, pc.Name)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -603,6 +812,9 @@ func InsertIntoMovie2LanguagesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Movie2LanguagesInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NMovie2LanguagesFields*(*chunkSize))
 					for _, item := range chunk {
@@ -611,13 +823,13 @@ func InsertIntoMovie2LanguagesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 							continue
 						}
 						for _, sl := range mi.SpokenLanguages {
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, sl.Encoding)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -645,6 +857,9 @@ func InsertIntoMovie2KeywordsChunked(db *sql.DB, chunkSize *int) func(data *Inse
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Movie2KeywordsInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NMovie2KeywordsFields*(*chunkSize))
 					for _, item := range chunk {
@@ -653,13 +868,13 @@ func InsertIntoMovie2KeywordsChunked(db *sql.DB, chunkSize *int) func(data *Inse
 							continue
 						}
 						for _, k := range mi.Keywords {
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, k.Id)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -686,6 +901,9 @@ func InsertIntoMovie2GenresChunked(db *sql.DB, chunkSize *int) func(data *Insert
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Movie2GenresInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NMovie2GenresFields*(*chunkSize))
 					for _, item := range chunk {
@@ -694,13 +912,13 @@ func InsertIntoMovie2GenresChunked(db *sql.DB, chunkSize *int) func(data *Insert
 							continue
 						}
 						for _, g := range mi.Genres {
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, g.Id)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -728,6 +946,9 @@ func InsertIntoMovie2CountriesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Movie2CountriesInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NMovie2CountriesFields*(*chunkSize))
 					for _, item := range chunk {
@@ -736,13 +957,13 @@ func InsertIntoMovie2CountriesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 							continue
 						}
 						for _, pc := range mi.ProductionCountries {
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, pc.Encoding)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -770,6 +991,9 @@ func InsertIntoMovie2CompaniesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Movie2CompaniesInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NMovie2CompaniesFields*(*chunkSize))
 					for _, item := range chunk {
@@ -778,13 +1002,13 @@ func InsertIntoMovie2CompaniesChunked(db *sql.DB, chunkSize *int) func(data *Ins
 							continue
 						}
 						for _, pc := range mi.ProductionCompanies {
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, pc.Id)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -812,6 +1036,9 @@ func UpdateLanguageForMovies(db *sql.DB, chunkSize *int) func(data *Insertable) 
 		for chunk := range slices.Chunk(*ip.Data, *chunkSize) {
 			wg.Go(
 				func() {
+					template := Movie2CompaniesInsertable{}
+					t, _ := template.IsInsertable()
+					query := template.ConstructInsertQuery()
 					var queryFields []string = make([]string, 0, *chunkSize)
 					var argFields []any = make([]any, 0, NMovie2CompaniesFields*(*chunkSize))
 					for _, item := range chunk {
@@ -820,13 +1047,13 @@ func UpdateLanguageForMovies(db *sql.DB, chunkSize *int) func(data *Insertable) 
 							continue
 						}
 						for _, pc := range mi.ProductionCompanies {
-							queryFields = append(queryFields, ip.Fields)
+							queryFields = append(queryFields, t.QueryField)
 							argFields = append(argFields, mi.MovieId)
 							argFields = append(argFields, pc.Id)
 						}
 					}
 					<-c
-					stmt := fmt.Sprintf("%v %v;", ip.Content, strings.Join(queryFields, ","))
+					stmt := fmt.Sprintf("%v%v", query, strings.Join(queryFields, ","))
 					err := InsertStmt(db, &stmt, &argFields)
 					if err != nil {
 						DatabaseLogger.Println(err)
@@ -848,32 +1075,32 @@ func TmdbMapFromStream(stream *[]string, data *Insertable) error {
 	s := *stream
 	target := &MovieInsertable{}
 
-	if len(s[TmdbIndices["Title"]]) <= 0 {
+	if len(s[StreamTmdbIndices["Title"]]) <= 0 {
 		return fmt.Errorf("%v is incorrect title", s[6])
 	}
 
-	if len(s[TmdbIndices["OriginalLanguage"]]) != 2 {
+	if len(s[StreamTmdbIndices["OriginalLanguage"]]) != 2 {
 		return fmt.Errorf("%v is incorrect language", s[5])
 	}
 
-	target.Budget, _ = strconv.ParseUint(s[TmdbIndices["Budget"]], 10, 64)
-	_ = json.Unmarshal([]byte(s[TmdbIndices["Genre"]]), &target.Genres)
-	target.MovieId, _ = strconv.ParseUint(s[TmdbIndices["MovieId"]], 10, 64)
-	_ = json.Unmarshal([]byte(s[TmdbIndices["Keywords"]]), &target.Keywords)
-	target.OriginalLanguage = s[TmdbIndices["OriginalLanguage"]]
-	target.Title = s[TmdbIndices["Title"]]
-	target.Overview = s[TmdbIndices["Overview"]]
-	target.Popularity, _ = strconv.ParseFloat(s[TmdbIndices["Popularity"]], 64)
-	_ = json.Unmarshal([]byte(s[TmdbIndices["ProductionCompanies"]]), &target.ProductionCompanies)
-	_ = json.Unmarshal([]byte(s[TmdbIndices["ProductionCountries"]]), &target.ProductionCountries)
-	target.ReleaseDate, _ = time.Parse("2006-01-02", s[TmdbIndices["ReleaseDate"]])
-	target.Revenue, _ = strconv.ParseInt(s[TmdbIndices["Revenue"]], 10, 64)
-	target.Runtime, _ = strconv.ParseInt(s[TmdbIndices["Runtime"]], 10, 64)
-	_ = json.Unmarshal([]byte(s[TmdbIndices["SpokenLanguages"]]), &target.SpokenLanguages)
-	target.Status = s[TmdbIndices["Status"]]
-	target.Tagline = s[TmdbIndices["Tagline"]]
-	target.AverageScore, _ = strconv.ParseFloat(s[TmdbIndices["AverageScore"]], 64)
-	target.TotalScore, _ = strconv.ParseUint(s[TmdbIndices["TotalScore"]], 10, 64)
+	target.Budget, _ = strconv.ParseUint(s[StreamTmdbIndices["Budget"]], 10, 64)
+	_ = json.Unmarshal([]byte(s[StreamTmdbIndices["Genre"]]), &target.Genres)
+	target.MovieId, _ = strconv.ParseUint(s[StreamTmdbIndices["MovieId"]], 10, 64)
+	_ = json.Unmarshal([]byte(s[StreamTmdbIndices["Keywords"]]), &target.Keywords)
+	target.OriginalLanguage = s[StreamTmdbIndices["OriginalLanguage"]]
+	target.Title = s[StreamTmdbIndices["Title"]]
+	target.Overview = s[StreamTmdbIndices["Overview"]]
+	target.Popularity, _ = strconv.ParseFloat(s[StreamTmdbIndices["Popularity"]], 64)
+	_ = json.Unmarshal([]byte(s[StreamTmdbIndices["ProductionCompanies"]]), &target.ProductionCompanies)
+	_ = json.Unmarshal([]byte(s[StreamTmdbIndices["ProductionCountries"]]), &target.ProductionCountries)
+	target.ReleaseDate, _ = time.Parse("2006-01-02", s[StreamTmdbIndices["ReleaseDate"]])
+	target.Revenue, _ = strconv.ParseInt(s[StreamTmdbIndices["Revenue"]], 10, 64)
+	target.Runtime, _ = strconv.ParseInt(s[StreamTmdbIndices["Runtime"]], 10, 64)
+	_ = json.Unmarshal([]byte(s[StreamTmdbIndices["SpokenLanguages"]]), &target.SpokenLanguages)
+	target.Status = s[StreamTmdbIndices["Status"]]
+	target.Tagline = s[StreamTmdbIndices["Tagline"]]
+	target.AverageScore, _ = strconv.ParseFloat(s[StreamTmdbIndices["AverageScore"]], 64)
+	target.TotalScore, _ = strconv.ParseUint(s[StreamTmdbIndices["TotalScore"]], 10, 64)
 	*data = target
 	return nil
 }
@@ -928,9 +1155,8 @@ func (dfm *DatasetFileMetadata) String() string {
 		DatasetFileMetadata { 
 			Directory: %v
 			Type: %v
-			Read?: %v
 			CreatedAt: %v
 			ReadAt: %v
 		}`,
-		dfm.Directory, dfm.Type, dfm.IsRead, *dfm.CreatedAt, *dfm.ReadAt)
+		dfm.Directory, dfm.Type, *dfm.CreatedAt, *dfm.ReadAt)
 }
