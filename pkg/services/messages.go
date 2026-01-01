@@ -12,6 +12,7 @@ import (
 type UserCore struct {
 	Username any `json:"username"`
 	Password any `json:"password"`
+	Token    any `json:"token"`
 }
 
 // User implements current schema of a database table.

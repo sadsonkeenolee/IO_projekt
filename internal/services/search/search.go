@@ -138,29 +138,34 @@ func (s *SearchService) TvByTitle(ctx *gin.Context) {
 		return
 	}
 
-	rows, err := s.DB.Query(`SELECT ID, budget, tmdb_id, original_lang_id,
-		title, overview, popularity, release_date, revenue, runtime, status, 
-		tagline, vote_average, vote_total FROM movies WHERE title LIKE ?`, "%"+bind.Content+"%")
-	if err != nil {
-		s.Logger.Printf("couldn't find a movie with title=%v. Reason: %v\n", bind.Content, err)
+	var id uint64
+	if err := s.DB.QueryRow(`call find_movie_id(?)`, bind.Content).Scan(&id); err != nil {
+		s.Logger.Printf("no id for title %v\n", bind.Content)
 		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
 		return
 	}
-	defer rows.Close()
-	mqs := []database.MovieSelectable{}
-	for rows.Next() {
-		var mq database.MovieSelectable
-		if err := rows.Scan(
-			&mq.Id, &mq.Budget, &mq.MovieId, &mq.OriginalLanguage,
-			&mq.Title, &mq.Overview, &mq.Popularity, &mq.ReleaseDate,
-			&mq.Revenue, &mq.Runtime, &mq.Status, &mq.Tagline, &mq.AverageScore,
-			&mq.TotalScore); err != nil {
-			s.Logger.Println(err)
-			continue
-		}
-		mqs = append(mqs, mq)
+
+	// 1. Fetch the main movie data
+	var mq database.MovieSelectable
+	err := s.DB.QueryRow("CALL get_movie_by_id(?)", id).Scan(
+		&mq.Id, &mq.Budget, &mq.MovieId, &mq.OriginalLanguage,
+		&mq.Title, &mq.Overview, &mq.Popularity, &mq.ReleaseDate,
+		&mq.Revenue, &mq.Runtime, &mq.Status, &mq.Tagline, &mq.AverageScore,
+		&mq.TotalScore,
+	)
+
+	if err != nil {
+		s.Logger.Printf("Lookup failed for ID %v: %v\n", id, err)
+		services.NewBadContentRequest(ctx, "movie doesn't exist")
+		return
 	}
-	services.NewGoodContentRequest(ctx, mqs)
+
+	s.fillMetadata(id, "CALL get_production_companies(?)", &mq.ProductionCompanies)
+	s.fillMetadata(id, "CALL get_genres(?)", &mq.Genres)
+	s.fillMetadata(id, "CALL get_keywords(?)", &mq.Keywords)
+	s.fillMetadata(id, "CALL get_production_countries(?)", &mq.ProductionCountries)
+	s.fillMetadata(id, "CALL get_languages(?)", &mq.SpokenLanguages)
+	services.NewGoodContentRequest(ctx, mq)
 }
 
 func (s *SearchService) TvById(ctx *gin.Context) {
@@ -171,52 +176,78 @@ func (s *SearchService) TvById(ctx *gin.Context) {
 		return
 	}
 
+	// 1. Fetch the main movie data
 	var mq database.MovieSelectable
-	rows, err := s.DB.Query(mq.ConstructSelectQuery(), bind.Content)
+	err := s.DB.QueryRow("CALL get_movie_by_id(?)", bind.Content).Scan(
+		&mq.Id, &mq.Budget, &mq.MovieId, &mq.OriginalLanguage,
+		&mq.Title, &mq.Overview, &mq.Popularity, &mq.ReleaseDate,
+		&mq.Revenue, &mq.Runtime, &mq.Status, &mq.Tagline, &mq.AverageScore,
+		&mq.TotalScore,
+	)
+
 	if err != nil {
-		s.Logger.Printf("couldn't find a movie with ID=%v.\n", bind.Content)
-		s.Logger.Println(err)
-		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
-		return
-	}
-
-	defer rows.Close()
-	for rows.Next() {
-		if err := rows.Scan(
-			&mq.Id, &mq.Budget, &mq.MovieId, &mq.OriginalLanguage,
-			&mq.Title, &mq.Overview, &mq.Popularity, &mq.ReleaseDate,
-			&mq.Revenue, &mq.Runtime, &mq.Status, &mq.Tagline, &mq.AverageScore,
-			&mq.TotalScore); err != nil {
-			s.Logger.Println(err)
-			services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
-			return
-		}
-	}
-
-	var companies []database.Movie2CompanySelectable
-	var c database.Movie2CompanySelectable
-	rows, err = s.DB.Query(c.ConstructSelectQuery(), bind.Content)
-	if err != nil {
-		s.Logger.Printf("couldn't fetch companies. Reason: %v\n", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var company database.Movie2CompanySelectable
-		if err := rows.Scan(&company.MovieId, &company.Company); err != nil {
-			s.Logger.Println(err)
-		} else {
-			companies = append(companies, company)
-		}
-	}
-	s.Logger.Println(companies)
-
-	if mq.MovieId != bind.Content {
-		s.Logger.Printf("id (%v) mismatches the found id (%v)\n",
-			bind.Content, mq.MovieId)
+		s.Logger.Printf("Lookup failed for ID %v: %v\n", bind.Content, err)
 		services.NewBadContentRequest(ctx, "movie doesn't exist")
 		return
 	}
+
+	// 2. Populate the complex slices using the procedures
+	// We pass the pointer to the slices directly
+	s.fillMetadata(bind.Content, "CALL get_production_companies(?)", &mq.ProductionCompanies)
+	s.fillMetadata(bind.Content, "CALL get_genres(?)", &mq.Genres)
+	s.fillMetadata(bind.Content, "CALL get_keywords(?)", &mq.Keywords)
+	s.fillMetadata(bind.Content, "CALL get_production_countries(?)", &mq.ProductionCountries)
+	s.fillMetadata(bind.Content, "CALL get_languages(?)", &mq.SpokenLanguages)
+
 	services.NewGoodContentRequest(ctx, mq)
+}
+
+func (s *SearchService) fillMetadata(movieID uint64, query string, target interface{}) {
+	rows, err := s.DB.Query(query, movieID)
+	if err != nil {
+		s.Logger.Printf("Procedure error [%s]: %v\n", query, err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var dummyID uint64
+		var val string
+		if err := rows.Scan(&dummyID, &val); err != nil {
+			s.Logger.Println("Scan error:", err)
+			continue
+		}
+
+		switch v := target.(type) {
+		case *[]database.Genre:
+			item := database.Genre{}
+			item.Id = dummyID
+			item.Name = val
+			*v = append(*v, item)
+
+		case *[]database.Keywords:
+			item := database.Keywords{}
+			item.Id = dummyID // If your Keyword struct has an ID field
+			item.Name = val
+			*v = append(*v, item)
+
+		case *[]database.ProductionCompaniesInsertable:
+			item := database.ProductionCompaniesInsertable{}
+			item.Id = dummyID
+			item.Name = val
+			*v = append(*v, item)
+
+		case *[]database.CodeCountry:
+			item := database.CodeCountry{}
+			item.Name = val
+			*v = append(*v, item)
+
+		case *[]database.LanguageEncoding:
+			item := database.LanguageEncoding{}
+			item.Name = val
+			*v = append(*v, item)
+		}
+	}
 }
 
 func (s *SearchService) BookById(ctx *gin.Context) {
@@ -227,64 +258,59 @@ func (s *SearchService) BookById(ctx *gin.Context) {
 		return
 	}
 
-	rows, err := s.DB.Query(`SELECT * FROM books WHERE ID=?`, bind.Content)
+	var bq database.BookSelectable
+	// Use the procedure for the main book data
+	// Assuming your Scan matches the procedure: ID, title, overview, isbn, isbn13, language, pages, release_date, publisher, rating, total_ratings
+	err := s.DB.QueryRow("CALL get_book_by_id(?)", bind.Content).Scan(
+		&bq.Id, &bq.Title, &bq.Isbn, &bq.Isbn13, &bq.Language,
+		&bq.Pages, &bq.ReleaseDate, &bq.Publisher, &bq.Rating, &bq.TotalRating,
+	)
+
 	if err != nil {
-		s.Logger.Printf("couldn't find a movie with title=%v\n", bind.Content)
-		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		s.Logger.Printf("Could not find book ID %v: %v\n", bind.Content, err)
+		services.NewBadContentRequest(ctx, "book doesn't exist")
 		return
 	}
 
-	defer rows.Close()
-	bqs := []database.BookSelectable{}
-	for rows.Next() {
-		var bq database.BookSelectable
-		if err := rows.Scan(
-			&bq.Id, &bq.Title, &bq.Rating, &bq.Isbn, &bq.Isbn13, &bq.Language,
-			&bq.Pages, &bq.TotalRating, &bq.ReleaseDate, &bq.Publisher,
-		); err != nil {
-			s.Logger.Println(err)
-			continue
-		}
-		bqs = append(bqs, bq)
-	}
-	services.NewGoodContentRequest(ctx, bqs)
+	// Populate Authors using the helper
+	s.fillMetadata(bind.Content, "CALL get_book_authors(?)", &bq.Authors)
+
+	services.NewGoodContentRequest(ctx, bq)
 }
 
 func (s *SearchService) BookByTitle(ctx *gin.Context) {
-	bind := Title{Content: ""}
+	bind := Title{}
 	if err := ctx.ShouldBindUri(&bind); err != nil {
 		s.Logger.Println(err)
 		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
 		return
 	}
 
-	if bind.Content == "" {
-		s.Logger.Println("couldn't parse title")
-		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
-		return
-	}
-
-	rows, err := s.DB.Query(`SELECT * FROM books WHERE title LIKE ?`, "%"+bind.Content+"%")
+	var bookID uint64
+	// 1. Find the best matching ID via procedure
+	err := s.DB.QueryRow("CALL find_book_id(?)", bind.Content).Scan(&bookID)
 	if err != nil {
-		s.Logger.Printf("couldn't find a movie with title=%v\n", bind.Content)
-		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		s.Logger.Printf("Could not find book with title %v: %v\n", bind.Content, err)
+		services.NewBadContentRequest(ctx, "book not found")
 		return
 	}
 
-	defer rows.Close()
-	bqs := []database.BookSelectable{}
-	for rows.Next() {
-		var bq database.BookSelectable
-		if err := rows.Scan(
-			&bq.Id, &bq.Title, &bq.Rating, &bq.Isbn, &bq.Isbn13, &bq.Language,
-			&bq.Pages, &bq.TotalRating, &bq.ReleaseDate, &bq.Publisher,
-		); err != nil {
-			s.Logger.Println(err)
-			continue
-		}
-		bqs = append(bqs, bq)
+	// 2. Reuse the ID fetch logic to get the full struct + authors
+	var bq database.BookSelectable
+	err = s.DB.QueryRow("CALL get_book_by_id(?)", bookID).Scan(
+		&bq.Id, &bq.Title, &bq.Isbn, &bq.Isbn13, &bq.Language,
+		&bq.Pages, &bq.ReleaseDate, &bq.Publisher, &bq.Rating, &bq.TotalRating,
+	)
+	if err != nil {
+		s.Logger.Println(err)
+		services.NewBadContentRequest(ctx, "error fetching book details")
+		return
 	}
-	services.NewGoodContentRequest(ctx, bqs)
+
+	// 3. Fill the Authors slice
+	s.fillMetadata(bookID, "CALL get_book_authors(?)", &bq.Authors)
+
+	services.NewGoodContentRequest(ctx, bq)
 }
 
 // ExposeConnection exposes configuration.

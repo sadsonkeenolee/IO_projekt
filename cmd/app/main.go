@@ -177,6 +177,4 @@ func main() {
 }
 
 // TODO:
-// -normalizacja i oczyszczenie stringow (baza sie buguje)
-// - utworzenie widokow w bazie danych
-// - dodac opisy co funkcje robia
+// - Uzupelnianie pustych rekordow

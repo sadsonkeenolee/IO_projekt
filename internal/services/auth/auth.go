@@ -136,6 +136,9 @@ func (c *AuthService) HealthCheck() error {
 
 // OnUserLogin implements logic for logging.
 func (c *AuthService) OnUserLogin(ctx *gin.Context) {
+	// TODO:
+	// sprawdzic czy token istnieje, jesli istnieje to nie generowac tokenu jesli
+	// czas jest w odpowiednim przedziale
 	var ulr services.UserLoginRequest
 	if err := ctx.ShouldBindJSON(&ulr); err != nil {
 		c.Logger.Printf(services.JsonParsing, err)
@@ -178,12 +181,17 @@ func (c *AuthService) OnUserLogin(ctx *gin.Context) {
 		return
 	}
 
-	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
-		AccessToken: c.GenerateSessionToken(requestedUsername, requestedPassword),
-		TokenType:   "Bearer",
-		ExpiresIn:   DefaultExpirationTime,
-		Message:     "credentials are correct",
-	})
+	if tok := c.GenerateSessionToken(requestedUsername, requestedPassword); tok != "" {
+		c.DB.Exec(`call create_user_session(?, ?)`, requestedUsername, tok)
+		ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
+			AccessToken: tok,
+			TokenType:   "Bearer",
+			ExpiresIn:   DefaultExpirationTime,
+			Message:     "Logged in.",
+		})
+		return
+	}
+
 }
 
 // OnUserRegister implements logic when user tries to register.
@@ -256,10 +264,10 @@ func (c *AuthService) OnUserRegister(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
-		AccessToken: c.GenerateSessionToken(username, passwordStringified),
-		TokenType:   "Bearer",
+		AccessToken: "None",
+		TokenType:   "None",
 		ExpiresIn:   DefaultExpirationTime,
-		Message:     "registration completed",
+		Message:     "Registered.",
 	})
 }
 
@@ -271,7 +279,6 @@ func (c *AuthService) GenerateSessionToken(username, password string) string {
 			"exp":      time.Now().Add(time.Hour * 1).Unix(),
 		})
 
-	// Dodam potem errory
 	tok, _ := token.SignedString(SecretTokenKey)
 	return tok
 }

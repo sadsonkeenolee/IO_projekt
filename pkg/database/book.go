@@ -69,7 +69,7 @@ func (ai *AuthorInsertable) ConstructInsertQuery() string {
 func (bi *BookInsertable) IsInsertable() (*Table, bool) {
 	return NewTable(
 		"books",
-		[]string{"title", "rating", "isbn", "isbn13", "language",
+		[]string{"ID", "title", "rating", "isbn", "isbn13", "language",
 			"pages", "total_ratings", "release_date", "publisher"},
 	), true
 
@@ -139,6 +139,7 @@ func BookFromStream(stream *[]string, data *Insertable) error {
 	target.TotalRating, _ = strconv.ParseInt(s[BookIndices["TotalRating"]], 10, 64)
 	target.ReleaseDate, _ = time.Parse("2006-01-02", s[StreamTmdbIndices["ReleaseDate"]])
 	target.Publisher = s[BookIndices["Publisher"]]
+
 	*data = target
 	return nil
 
