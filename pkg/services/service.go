@@ -36,13 +36,6 @@ type Connection struct {
 	Password string `mapstructure:"password"`
 }
 
-// Possible service statuses.
-var stateTable = map[ServiceState]string{
-	StateOnline: "online",
-	StateIdle:   "idle",
-	StateDown:   "down",
-}
-
 // Service implements basic functionality for any Service.
 type Service struct {
 	Logger       *log.Logger
@@ -62,17 +55,6 @@ type IService interface {
 	HealthCheck() error
 	// ExposeConnection should return configuration info.
 	ExposeConnection() *Connection
-}
-
-// FetchUser queries the database and returns user if exists. User can only be
-// fetched by username. Caller's DB context is used.
-func (s *Service) FetchUser(username *string) (*User, error) {
-	var u User
-	userFetched := s.DB.QueryRow("SELECT * FROM user_credentials WHERE username=?", *username)
-	if err := userFetched.Scan(&u.Id, &u.Username, &u.Password, &u.Email); err != nil {
-		return nil, fmt.Errorf("user doesn't exist")
-	}
-	return &u, nil
 }
 
 func NewLogger(out io.Writer, prefix string, flags int) *log.Logger {
@@ -117,8 +99,15 @@ func NewDatabase(c *Connection) *sql.DB {
 	cfg := ParseDriverConfig(c)
 	db, err := sql.Open(c.Type,
 		fmt.Sprintf("%v?parseTime=true", cfg.FormatDSN()))
+
 	if err != nil {
 		GlobalServiceLogger.Fatalf("Got error while creating a database driver: %v\n", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		db.Close()
+		GlobalServiceLogger.Fatalf("No database connection. Check the database configuration.")
+		return nil
 	}
 	return db
 }

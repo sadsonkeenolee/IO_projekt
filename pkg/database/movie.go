@@ -268,7 +268,6 @@ func (m2c *Movie2CompaniesInsertable) ConstructInsertQuery() string {
 		JoinTableFields(t))
 }
 
-// TODO: Dodac tabele crew
 type CastCrewMetadata struct {
 	MovieId uint64
 	Cast    []CastMember
@@ -278,12 +277,10 @@ type CastCrewMetadata struct {
 func (ccm *CastCrewMetadata) IsInsertable() (*Table, bool) {
 	// assume the struct is insertable, while batching inserts, let it fail on the
 	// inserting level
-	//FIXME: Na razie nie jest insertable
 	return nil, false
 }
 
 func (ccm *CastCrewMetadata) ConstructInsertQuery() string {
-	//FIXME: Na razie nie jest insertable
 	return ""
 }
 
@@ -376,7 +373,6 @@ type Movie2CompanySelectable struct {
 
 func (m2c *Movie2CompanySelectable) IsSelectable() (*Table, bool) {
 	return NewTable(
-		// FIXME:
 		"JoinedTable",
 		[]string{"movie_id", "company"},
 	), true

@@ -9,24 +9,24 @@ import (
 
 // UserCore implements very basic info about user. Username and Password are
 // either of type string or []byte.
-type UserCore struct {
-	Username any `json:"username"`
-	Password any `json:"password"`
-	Token    any `json:"token"`
+type UserCore[T string | []byte] struct {
+	Username T `json:"username"`
+	Password T `json:"password"`
+	Token    T `json:"token"`
 }
 
 // User implements current schema of a database table.
-type User struct {
+type User[T string | []byte] struct {
 	Id    uint
 	Email string
-	UserCore
+	UserCore[T]
 }
 
 // For readability
-type UserLoginRequest = UserCore
+type UserLoginRequest = UserCore[string]
 
-type UserRegisterRequest struct {
-	UserCore
+type UserRegisterRequest[T string | []byte] struct {
+	UserCore[T]
 	Email    string `json:"email"`
 	Birthday string `json:"birthday"`
 	Gender   string `json:"gender"`
@@ -49,17 +49,19 @@ type TvResponse struct {
 }
 
 const (
-	InternalErrorMessage  = "service is having some troubles"
-	InvalidRequestMessage = "service couldn't answer your request"
-	LoginErrorMessage     = "username or/and password are incorrect"
-	RegisterErrorMessage  = "service is having some troubles while trying to register you"
+	InternalMessage           = "service is having some troubles"
+	InvalidRequestMessage     = "service couldn't answer your request"
+	LoginFailedMessage        = "username or/and password are incorrect"
+	RegistrationFailedMessage = "service is having some troubles while trying to register you"
 	// Here constants that are not send out in requests
-	JsonParsing           = "Error while binding JSON: %v\n"
-	UsernameParsing       = "Username (%v) field has invalid type\n"
-	PasswordParsing       = "Password (%v) field has invalid type\n"
-	InvalidFetching       = "Error while fetching a user: %v\n"
-	InvalidUserValidation = "Error while validating user: %v\n"
-	TransactionProblem    = "Couldn't complete this transaction: %v\n"
+	JsonParsingProblemMessage      = "Error while binding JSON: %v\n"
+	PasswordParsingProblemMessage  = "Password (%v) field has invalid type\n"
+	TransactionNotCompletedMessage = "Couldn't complete this transaction: %v\n"
+	UserDoesntExistMessage         = "User (%v) doesn't exist"
+	UserFetchingProblemMessage     = "Error while fetching a user: %v\n"
+	UserValidationProblemMessage   = "Error while validating user: %v\n"
+	UsernameParsingProblemMessage  = "Username (%v) field has invalid type\n"
+	TableRebuildMessage            = "Can't rebuild table `(%v)`, reason: `(%v)`"
 )
 
 func NewGoodContentRequest(ctx *gin.Context, content any) {

@@ -1,6 +1,6 @@
-drop procedure get_movie_by_id;
-drop procedure get_genres;
-drop procedure get_keywords;
-drop procedure get_languages;
-drop procedure get_production_companies;
-drop procedure get_production_countries;
+drop procedure if exists get_movie_by_id;
+drop procedure if exists get_genres;
+drop procedure if exists get_keywords;
+drop procedure if exists get_languages;
+drop procedure if exists get_production_companies;
+drop procedure if exists get_production_countries;

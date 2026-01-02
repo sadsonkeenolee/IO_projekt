@@ -1,5 +1,4 @@
-// Package `credentials` implements the login and register logic for the
-// service.
+// Package `auth` implements logic for a user login and registration.
 package auth
 
 import (
@@ -27,6 +26,8 @@ import (
 
 // Use it as global logger that will log everything that happens globally
 var AuthLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
+
+// Dummy SecretTokenKey, in the production code you never store it there.
 var SecretTokenKey = []byte("bardzo_tajny_token_nie_udostepniac")
 
 const (
@@ -67,122 +68,111 @@ func WithDatabase(db *sql.DB) func(a *AuthService) {
 	}
 }
 
+// Main constructor for the authorization service. Provide all necessary
+// functions into `opts` - they will be executed in the given order.
 func AuthBuilder(opts ...func(*AuthService)) services.IService {
-	c := &AuthService{}
+	a := &AuthService{}
 	for _, opt := range opts {
-		opt(c)
+		opt(a)
 	}
-	return c
+	return a
 }
 
-func (c *AuthService) Start() error {
-	if err := c.HealthCheck(); err != nil {
+func (a *AuthService) Start() error {
+	if err := a.HealthCheck(); err != nil {
 		AuthLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
 	}
 	// v1 of api.
 	{
-		v1 := c.Router.Group("/v1")
-		v1.POST("auth/login", c.OnUserLogin)
-		v1.POST("auth/register", c.OnUserRegister)
+		v1 := a.Router.Group("/v1")
+		v1.POST("auth/login", a.OnUserLogin)
+		v1.POST("auth/register", a.OnUserRegister)
 		// v1.POST("auth/forgot", c.OnForgotPassword)
 	}
 
 	go func() {
-		if err := c.Router.Run(":9999"); err != nil && err != http.ErrServerClosed {
-			c.Logger.Fatalf("Router failed: %v\n", err)
+		if err := a.Router.Run(":9999"); err != nil && err != http.ErrServerClosed {
+			a.Logger.Fatalf("Router failed: %v\n", err)
 		}
 	}()
 
 	kill := make(chan os.Signal, 1)
 	signal.Notify(kill, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-kill
-	c.Logger.Printf("Gracefully shutting down the server: %v\n.", sig)
-	c.State = services.StateDown
-	c.DB.Close()
+	a.Logger.Printf("Gracefully shutting down the server: %v\n.", sig)
+	a.State = services.StateDown
+	a.DB.Close()
 	return fmt.Errorf("server closed")
 }
 
-// validateUser extracts password from database and checks if the user exists.
-// Then two password are compared to each other - if success, nil is returned.
-func (c *AuthService) validateUser(fetchedPassword, requestPassword []byte) error {
-	if err := bcrypt.CompareHashAndPassword(fetchedPassword, requestPassword); err != nil {
-		return fmt.Errorf("user credentials don't match")
-	}
-	return nil
-}
-
-func (c *AuthService) HealthCheck() error {
-	if c.Logger == nil {
+func (a *AuthService) HealthCheck() error {
+	if a.Logger == nil {
 		return fmt.Errorf("No logger setup")
 	}
 
-	if c.Router == nil {
+	if a.Router == nil {
 		return fmt.Errorf("No router setup")
 	}
 
-	if c.DB == nil {
+	if a.DB == nil {
 		return fmt.Errorf("No database setup")
 	}
 
-	if c.ConnInfo == nil {
+	if a.ConnInfo == nil {
 		return fmt.Errorf("No connection info setup")
 	}
 
-	if c.ConfigReader == nil {
+	if a.ConfigReader == nil {
 		return fmt.Errorf("No config setup")
 	}
 	return nil
 }
 
+// UserLoginValidation compares the salted password in the database with the password
+// provided by the user.
+func (a *AuthService) UserLoginValidation(fetchedPassword, requestPassword []byte) error {
+	if err := bcrypt.CompareHashAndPassword(fetchedPassword, requestPassword); err != nil {
+		return fmt.Errorf(services.LoginFailedMessage)
+	}
+	return nil
+}
+
 // OnUserLogin implements logic for logging.
-func (c *AuthService) OnUserLogin(ctx *gin.Context) {
-	// TODO:
-	// sprawdzic czy token istnieje, jesli istnieje to nie generowac tokenu jesli
-	// czas jest w odpowiednim przedziale
+func (a *AuthService) OnUserLogin(ctx *gin.Context) {
 	var ulr services.UserLoginRequest
 	if err := ctx.ShouldBindJSON(&ulr); err != nil {
-		c.Logger.Printf(services.JsonParsing, err)
+		a.Logger.Printf(services.JsonParsingProblemMessage, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
 
-	requestedUsername, ok := ulr.Username.(string)
-	if !ok {
-		c.Logger.Printf(services.UsernameParsing, ulr.Username)
-		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
-		return
-	}
-
-	requestedPassword, ok := ulr.Password.(string)
-	if !ok {
-		c.Logger.Printf(services.PasswordParsing, ulr.Password)
-		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
-		return
-	}
-
-	requestedPasswordInBytes := []byte(requestedPassword)
-	user, err := c.FetchUser(&requestedUsername)
+	user, err := a.FetchUser(&ulr.Username)
 	if err != nil {
-		c.Logger.Printf(services.InvalidFetching, err)
-		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
+		a.Logger.Printf(services.UserFetchingProblemMessage, err)
+		services.NewBadCredentialsCoreResponse(ctx, services.LoginFailedMessage)
 		return
 	}
 
-	fetchedPasswordInBytes, ok := user.Password.([]byte)
-	if !ok {
-		c.Logger.Printf(services.PasswordParsing, user.Password)
-		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
+	if err := a.UserLoginValidation(user.Password, []byte(ulr.Password)); err != nil {
+		a.Logger.Printf(services.UserValidationProblemMessage, err)
+		services.NewBadCredentialsCoreResponse(ctx, services.LoginFailedMessage)
 		return
 	}
 
-	if err := c.validateUser(fetchedPasswordInBytes, requestedPasswordInBytes); err != nil {
-		c.Logger.Printf(services.InvalidUserValidation, err)
-		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
+	var tok string
+	// TODO: Dodać sprawdzanie timestampów.
+	if err := a.DB.QueryRow(`select token from user_login_timestamps where user_id=?`, user.Id).Scan(&tok); err == nil {
+		ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
+			AccessToken: tok,
+			TokenType:   "Bearer",
+			ExpiresIn:   DefaultExpirationTime,
+			Message:     "Logged in.",
+		})
 		return
 	}
 
-	if tok := c.GenerateSessionToken(requestedUsername, requestedPassword); tok != "" {
-		c.DB.Exec(`call create_user_session(?, ?)`, requestedUsername, tok)
+	if tok = a.GenerateSessionToken(ulr.Username, ulr.Password); tok != "" {
+		a.DB.Exec(`call create_user_session(?, ?)`, ulr.Username, tok)
 		ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
 			AccessToken: tok,
 			TokenType:   "Bearer",
@@ -195,71 +185,57 @@ func (c *AuthService) OnUserLogin(ctx *gin.Context) {
 }
 
 // OnUserRegister implements logic when user tries to register.
-func (c *AuthService) OnUserRegister(ctx *gin.Context) {
-	var u services.UserRegisterRequest
+func (a *AuthService) OnUserRegister(ctx *gin.Context) {
+	var u services.UserRegisterRequest[string]
 	if err := ctx.ShouldBindJSON(&u); err != nil {
-		c.Logger.Printf(services.JsonParsing, err)
+		a.Logger.Printf(services.JsonParsingProblemMessage, err)
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
 
-	username, ok := u.Username.(string)
-	if !ok {
-		c.Logger.Printf(services.UsernameParsing, u.Username)
-		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
-		return
-	}
-
-	if _, err := c.FetchUser(&username); err == nil {
-		c.Logger.Printf("User `%v` exists.\n", username)
+	if _, err := a.FetchUser(&u.Username); err == nil {
+		a.Logger.Printf("User `%v` exists.\n", u.Username)
 		// IMPORTANT: To prevent some bad actors, don't inform a user about it.
-		services.NewBadCredentialsCoreResponse(ctx, services.LoginErrorMessage)
+		services.NewBadCredentialsCoreResponse(ctx, services.LoginFailedMessage)
 		return
 	}
 
 	// Start a transaction to push full user credentials.
-	tx, err := c.DB.BeginTx(ctx, nil)
+	tx, err := a.DB.BeginTx(ctx, nil)
 	defer tx.Rollback()
 
 	if err != nil {
-		c.Logger.Printf(services.TransactionProblem, err)
-		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
+		a.Logger.Printf(services.TransactionNotCompletedMessage, err)
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalMessage)
 		return
 	}
 
-	requestPassword, ok := u.Password.(string)
-	if !ok {
-		c.Logger.Printf(services.PasswordParsing, u.Password)
-		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
-		return
-	}
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(requestPassword), 10)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(u.Password), 10)
 	if err != nil {
-		c.Logger.Printf("Couldn't hash the password: %v\n", requestPassword)
-		services.NewBadCredentialsCoreResponse(ctx, services.InternalErrorMessage)
+		a.Logger.Printf("Couldn't hash the password: %v\n", u.Password)
+		services.NewBadCredentialsCoreResponse(ctx, services.InternalMessage)
 		return
 	}
 
 	passwordStringified := string(hashedPassword)
 	res, err := tx.Exec(`INSERT INTO user_credentials(username, password, email) VALUES (?, ?, ?)`, u.Username, passwordStringified, u.Email)
 	if err != nil {
-		c.Logger.Printf(services.TransactionProblem, err)
-		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
+		a.Logger.Printf(services.TransactionNotCompletedMessage, err)
+		services.NewBadCredentialsCoreResponse(ctx, services.RegistrationFailedMessage)
 		return
 	}
 
 	id, _ := res.LastInsertId()
 	_, err = tx.Exec(`INSERT INTO user_identity(ID, birthday, gender) VALUES (?, ?, ?)`, id, u.Birthday, u.Gender)
 	if err != nil {
-		c.Logger.Printf(services.TransactionProblem, err)
-		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
+		a.Logger.Printf(services.TransactionNotCompletedMessage, err)
+		services.NewBadCredentialsCoreResponse(ctx, services.RegistrationFailedMessage)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		c.Logger.Printf(services.TransactionProblem, err)
-		services.NewBadCredentialsCoreResponse(ctx, services.RegisterErrorMessage)
+		a.Logger.Printf(services.TransactionNotCompletedMessage, err)
+		services.NewBadCredentialsCoreResponse(ctx, services.RegistrationFailedMessage)
 		return
 	}
 
@@ -271,7 +247,8 @@ func (c *AuthService) OnUserRegister(ctx *gin.Context) {
 	})
 }
 
-func (c *AuthService) GenerateSessionToken(username, password string) string {
+// GenerateSessionToken generates cookies for logged in users.
+func (a *AuthService) GenerateSessionToken(username, password string) string {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256,
 		jwt.MapClaims{
 			"username": username,
@@ -283,11 +260,21 @@ func (c *AuthService) GenerateSessionToken(username, password string) string {
 	return tok
 }
 
-// ExposeConnection exposes configuration.
-func (c *AuthService) ExposeConnection() *services.Connection {
-	return c.ConnInfo
+// FetchUser queries the database and returns user if exists. User can only be
+// fetched by username. Caller's DB context is used.
+func (a *AuthService) FetchUser(username *string) (*services.User[[]byte], error) {
+	var u services.User[[]byte]
+	if err := a.DB.QueryRow(`SELECT * FROM user_credentials WHERE username=?`,
+		*username).Scan(&u.Id, &u.Username, &u.Password, &u.Email); err != nil {
+		return nil, fmt.Errorf(services.UserDoesntExistMessage, *username)
+	}
+	return &u, nil
 }
 
-func (c *AuthService) String() string {
+// ExposeConnection exposes configuration.
+func (a *AuthService) ExposeConnection() *services.Connection {
+	return a.ConnInfo
+}
+func (a *AuthService) String() string {
 	return "Credentials"
 }

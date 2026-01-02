@@ -105,7 +105,7 @@ func (bq *BookSelectable) ConstructSelectQuery() string {
 		return ""
 	}
 	// FIXME: Change it later
-	return "call get_movie_by_id(?)"
+	return "call get_book_by_id(?)"
 }
 
 func CastFromBookInsertableToInsertable(item *BookInsertable) (Insertable, error) {

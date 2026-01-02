@@ -24,6 +24,7 @@ import (
 var GlobalIngestLogger *log.Logger = log.New(os.Stderr, "",
 	log.LstdFlags|log.Lmsgprefix|log.Llongfile)
 
+// Define function signatures for functions.
 type ExtractFunc = func(*[]string, *database.Insertable) error
 type TransformFunc = func(*[]*database.Insertable, *[]*database.Insertable,
 	*[]*database.Insertable) error
@@ -83,7 +84,6 @@ func IngestBuilder(opts ...func(*Ingest)) services.IService {
 }
 
 func (i *Ingest) IsDataExtracted() ([]*database.DatasetFileMetadata, error) {
-	// FIXME: Nieaktualne
 	rows, err := i.DB.Query(`SELECT directory, data_type, created_at, 
 		read_at FROM read_table`)
 	if err != nil {
@@ -153,6 +153,135 @@ func (i *Ingest) Load(pipeline *database.Insertable, funcs ...LoadFunc) error {
 	return nil
 }
 
+func (i *Ingest) MoviePipeline(path1, path2 string) {
+	mme1, err := i.Extract(&path1, database.TmdbMapFromStream)
+	if err != nil {
+		i.Logger.Fatalf("First extraction failed: %v\n", err)
+	}
+	i.Logger.Println("First extraction completed.")
+	mme2, err := i.Extract(&path2, database.TmdbMapCreditsFromStream)
+	if err != nil {
+		i.Logger.Fatalf("Second extraction failed: %v\n", err)
+	}
+	i.Logger.Println("Second extraction completed.")
+	final, err := i.Transform(&mme1, &mme2, database.TmdbJoinBoth)
+	if err != nil {
+		i.Logger.Fatalf("Transforming failed: %v\n", err)
+	}
+	i.Logger.Println("Transforming completed.")
+
+	ip, err := database.NewInsertPipeline(&final)
+	if err != nil {
+		i.Logger.Fatalf("Error while creating a pipeline: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoMoviesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoLanguagesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoKeywordsChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoGenresChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoCountriesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoCompaniesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoMovie2CompaniesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoCompaniesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoMovie2GenresChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoMovie2KeywordsChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
+	err = i.Load(&ip, database.InsertIntoMovie2LanguagesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+	if err = database.RebuildTable(i.DB, "movies", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "movies", err)
+	}
+	if err = database.RebuildTable(i.DB, "languages", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "languages", err)
+	}
+	if err = database.RebuildTable(i.DB, "keywords", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "keywords", err)
+	}
+	if err = database.RebuildTable(i.DB, "genres", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "genres", err)
+	}
+	if err = database.RebuildTable(i.DB, "countries", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "countries", err)
+	}
+	if err = database.RebuildTable(i.DB, "movie2companies", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "movie2companies", err)
+	}
+	if err = database.RebuildTable(i.DB, "movie2countries", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "movie2countries", err)
+	}
+	if err = database.RebuildTable(i.DB, "movie2genres", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "movie2genres", err)
+	}
+	if err = database.RebuildTable(i.DB, "movie2keywords", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "movie2keywords", err)
+	}
+	if err = database.RebuildTable(i.DB, "movie2languages", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "movie2languages", err)
+	}
+}
+
+func (i *Ingest) BookPipeline(path3 string) {
+	bis, err := i.Extract(&path3, database.BookFromStream)
+	if err != nil {
+		i.Logger.Fatalf("First extraction failed: %v\n", err)
+	}
+	i.Logger.Println("Third extraction completed.")
+
+	bip, err := database.NewInsertPipeline(&bis)
+	if err != nil {
+		i.Logger.Printf("Cannot create pipeline, %v\n", err)
+	}
+	i.Load(&bip, database.InsertIntoBooksChunked(i.DB, &i.MaxBatchSize))
+	i.Load(&bip, database.InsertIntoAuthorsChunked(i.DB, &i.MaxBatchSize))
+	if err = database.RebuildTable(i.DB, "books", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "books", err)
+	}
+	if err = database.RebuildTable(i.DB, "authors", "InnoDB"); err != nil {
+		i.Logger.Fatalf(services.TableRebuildMessage, "authors", err)
+	}
+}
+
 func (i *Ingest) Start() error {
 	if err := i.HealthCheck(); err != nil {
 		GlobalIngestLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
@@ -171,140 +300,10 @@ func (i *Ingest) Start() error {
 		i.Logger.Println("Extracting data for the first ever setup...")
 		path1 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_movies.csv")
 		path2 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "tmdb-movies-data/tmdb_5000_credits.csv")
-
-		start := time.Now()
-		// MOVIE PIPELINE START
-		mme1, err := i.Extract(&path1, database.TmdbMapFromStream)
-		if err != nil {
-			i.Logger.Fatalf("First extraction failed: %v\n", err)
-		}
-		i.Logger.Println("First extraction completed.")
-		mme2, err := i.Extract(&path2, database.TmdbMapCreditsFromStream)
-		if err != nil {
-			i.Logger.Fatalf("Second extraction failed: %v\n", err)
-		}
-		i.Logger.Println("Second extraction completed.")
-		final, err := i.Transform(&mme1, &mme2, database.TmdbJoinBoth)
-		if err != nil {
-			i.Logger.Fatalf("Transforming failed: %v\n", err)
-		}
-		i.Logger.Println("Transforming completed.")
-
-		ip, err := database.NewInsertPipeline(&final)
-		if err != nil {
-			i.Logger.Fatalf("Error while creating a pipeline: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoMoviesChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoLanguagesChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoKeywordsChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoGenresChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoCountriesChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoCompaniesChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoMovie2CompaniesChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoCompaniesChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoMovie2GenresChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoMovie2KeywordsChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		err = i.Load(&ip, database.InsertIntoMovie2LanguagesChunked(i.DB, &i.MaxBatchSize))
-		if err != nil {
-			i.Logger.Fatalf("Error while inserting: %v\n", err)
-		}
-
-		// MOVIE PIPELINE END
-		// BOOK PIPELINE START
-
 		path3 := filepath.Join(os.Getenv("DOWNLOAD_DIR"), "goodreads-books-data/books.csv")
-		bis, err := i.Extract(&path3, database.BookFromStream)
-		if err != nil {
-			i.Logger.Fatalf("First extraction failed: %v\n", err)
-		}
-		i.Logger.Println("Third extraction completed.")
-
-		bip, err := database.NewInsertPipeline(&bis)
-		if err != nil {
-			i.Logger.Printf("Cannot create pipeline, %v\n", err)
-		}
-		i.Load(&bip, database.InsertIntoBooksChunked(i.DB, &i.MaxBatchSize))
-		i.Load(&bip, database.InsertIntoAuthorsChunked(i.DB, &i.MaxBatchSize))
-
-		if err = database.RebuildTable(i.DB, "movies", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movies: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "languages", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding languages: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "keywords", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding keywords: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "genres", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding genres: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "countries", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding countries: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "movie2companies", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movie2companies: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "movie2countries", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movie2countries: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "movie2genres", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movie2genres: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "movie2keywords", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movie2keywords: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "movie2languages", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movie2languages: %v\n", err)
-		}
-
-		if err = database.RebuildTable(i.DB, "books", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movies: %v\n", err)
-		}
-		if err = database.RebuildTable(i.DB, "authors", "InnoDB"); err != nil {
-			i.Logger.Fatalf("Error while rebuilding movies: %v\n", err)
-		}
-
+		start := time.Now()
+		i.MoviePipeline(path1, path2)
+		i.BookPipeline(path3)
 		tx, err := i.DB.Begin()
 		updateStmt, err := tx.Prepare(`update read_table set read_at=current_timestamp`)
 		if err != nil {
