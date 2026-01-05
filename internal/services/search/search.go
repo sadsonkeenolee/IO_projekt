@@ -2,7 +2,9 @@
 package search
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -15,15 +17,12 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 	"github.com/spf13/viper"
 )
 
 type SearchService struct {
 	services.Service
-}
-
-type UriContent[T uint64 | string] struct {
-	Content T `uri:"indentifier"`
 }
 
 var GlobalSearchLogger *log.Logger = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix|log.Llongfile)
@@ -74,6 +73,7 @@ func (s *SearchService) Start() error {
 	// v1 of api.
 	{
 		v1 := s.Router.Group("/v1")
+		v1.GET("api/home/", s.HomePage)
 		v1.GET("api/tv/id/:identifier/", s.TvById)
 		v1.GET("api/book/id/:identifier/", s.BookById)
 		v1.GET("api/concert/id/:identifier/", func(ctx *gin.Context) { panic("Not implemented") })
@@ -122,9 +122,65 @@ func (s *SearchService) HealthCheck() error {
 	return nil
 }
 
+func (s *SearchService) HomePage(ctx *gin.Context) {
+	shows := s.GetDefaultShowsRecommendations()
+	books := s.GetDefaultBooksRecommendations()
+	content := map[string]any{
+		"shows": shows,
+		"books": books,
+	}
+	services.NewGoodContentRequest(ctx, content)
+}
+
+func (s *SearchService) GetDefaultShowsRecommendations() []*database.MovieSelectable {
+	rows, err := s.DB.Query(`select * from default_shows_recommendation`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	shows := make([]*database.MovieSelectable, 0, 25)
+
+	for rows.Next() {
+		var ms database.MovieSelectable
+		if err := rows.Scan(
+			&ms.Id, &ms.Budget, &ms.MovieId, &ms.OriginalLanguage,
+			&ms.Title, &ms.Overview, &ms.Popularity, &ms.ReleaseDate,
+			&ms.Revenue, &ms.Runtime, &ms.Status, &ms.Tagline, &ms.AverageScore,
+			&ms.TotalScore,
+		); err != nil {
+			fmt.Println(err)
+			continue
+		}
+		shows = append(shows, &ms)
+	}
+	return shows
+}
+
+func (s *SearchService) GetDefaultBooksRecommendations() []*database.BookSelectable {
+	rows, err := s.DB.Query(`select * from default_books_recommendation`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	books := make([]*database.BookSelectable, 0, 25)
+
+	for rows.Next() {
+		var bs database.BookSelectable
+		if err := rows.Scan(
+			&bs.Id, &bs.Title, &bs.Isbn, &bs.Isbn13, &bs.Language,
+			&bs.Pages, &bs.ReleaseDate, &bs.Publisher, &bs.Rating, &bs.TotalRating,
+		); err != nil {
+			fmt.Println(err)
+			continue
+		}
+		books = append(books, &bs)
+	}
+	return books
+}
+
 // TvByTitle gets tv by the title
 func (s *SearchService) TvByTitle(ctx *gin.Context) {
-	var uc UriContent[string]
+	var uc services.UriContent[string]
 	uc.Content = ctx.Param("identifier")
 
 	if uc.Content == "" {
@@ -136,7 +192,8 @@ func (s *SearchService) TvByTitle(ctx *gin.Context) {
 	var id uint64
 	if err := s.DB.QueryRow(`call find_movie_id(?)`, uc.Content).Scan(&id); err != nil {
 		s.Logger.Printf("no id for title %v\n", uc.Content)
-		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		// TODO: Cachowanie do bazy danych
+		services.NewGoodContentRequest(ctx, s.FetchTvShow(uc.Content))
 		return
 	}
 
@@ -157,9 +214,25 @@ func (s *SearchService) TvByTitle(ctx *gin.Context) {
 	services.NewGoodContentRequest(ctx, ms)
 }
 
+func (i *SearchService) FetchTvShow(title string) map[string]any {
+	url := utils.PrepareFetchUrl(title)
+	url = fmt.Sprintf(url, title)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Add("accept", "application/json")
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %v", os.Getenv("TMDB_API_KEY")))
+	res, _ := http.DefaultClient.Do(req)
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	var reqBody map[string]any
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return nil
+	}
+	return reqBody
+}
+
 // TvById gets tv by id
 func (s *SearchService) TvById(ctx *gin.Context) {
-	var uc UriContent[uint64]
+	var uc services.UriContent[uint64]
 	uc.Content, _ = strconv.ParseUint(ctx.Param("identifier"), 10, 64)
 
 	// 1. Fetch the main movie data
@@ -182,7 +255,7 @@ func (s *SearchService) TvById(ctx *gin.Context) {
 
 // BookById gets book by id
 func (s *SearchService) BookById(ctx *gin.Context) {
-	var uc UriContent[uint64]
+	var uc services.UriContent[uint64]
 	uc.Content, _ = strconv.ParseUint(ctx.Param("identifier"), 10, 64)
 
 	var bs database.BookSelectable
@@ -202,7 +275,7 @@ func (s *SearchService) BookById(ctx *gin.Context) {
 
 // BookByTitle gets book by title
 func (s *SearchService) BookByTitle(ctx *gin.Context) {
-	var uc UriContent[string]
+	var uc services.UriContent[string]
 	uc.Content = ctx.Param("identifier")
 
 	var bookID uint64

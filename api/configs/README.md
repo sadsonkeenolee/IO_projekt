@@ -1,12 +1,10 @@
 # Pliki Konfiguracyjne
-Tutaj znajdują się wszystkie pliki konfiguracyjne.
----
 ## Nazwy Plików
-Obecnie serwisy obsługują:
-`CredentialsConfig.toml`, `EtlConfig.toml`, `FetchConfig.toml`.
-Plik musi wyglądać w następujący sposób:
-
-`*Config.toml`
+Aby serwis poprawnie działał należy stworzyć poniższe pliki:
+- `AuthConfig.toml`
+- `IngestConfig.toml`
+- `SearchConfig.toml`
+## Struktura
 ```toml
 [ConnInfo]
 type = "mysql"    # typ bazy danych (postgres, sql, itp.) (na razie tylko sql)
@@ -18,4 +16,6 @@ password = "test" # hasło dla bazy danych
 ```
 ---
 ## Migracje
-Każda migracja powinna mieć `.up` i `.down`. Ponadto, na początku nazwy należy podać wersję (numer), np.: `1_user_table.up.sql` i `1_user_table.down.sql`. Następna migracja będzie zaczynać się od `2_(...).up.sql` oraz `2_(...).down.sql.`
+Każda migracja zawiera:
+- `.up` i `.down`
+- liczbę definiującą migrację: `1_(...).up.sql`, `1_(...).down.sql`

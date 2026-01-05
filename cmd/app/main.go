@@ -23,6 +23,7 @@ var upFlag = flag.Bool("up", false, "up migration, otherwise down")
 var wipeFlag = flag.Bool("wipe", false, "wipe out a database")
 var versionFlag = flag.Int("version", 0, "value of migration")
 var serviceNameFlag = flag.String("service", "", "service name to run")
+var apiFlag = flag.String("api", "", "api key for TMDB")
 
 const (
 	Invalid = iota
@@ -80,7 +81,8 @@ func main() {
 	case Search:
 		EnvVariables["MIGRATIONS"] = InitJoinedPath(EnvVariables["MIGRATIONS"], "search")
 	}
-
+	EnvVariables["TMDB_API_KEY"] = *apiFlag
+	EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
 	// Set all variables
 	for k, v := range EnvVariables {
 		_ = os.Setenv(k, v)

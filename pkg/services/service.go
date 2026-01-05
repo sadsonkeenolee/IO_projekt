@@ -46,6 +46,11 @@ type Service struct {
 	ConfigReader *viper.Viper
 }
 
+// UriContent fetches the uri request
+type UriContent[T uint64 | string] struct {
+	Content T `uri:"identifier"`
+}
+
 // IService defines what functions should have any Service.
 type IService interface {
 	// Start makes the service public, allowing for incoming
