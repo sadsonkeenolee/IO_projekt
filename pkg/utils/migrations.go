@@ -21,13 +21,14 @@ func createDriver(migrationsPath string, ci *services.Connection) (*migrate.Migr
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create a driver, reason: %v\n", err)
 	}
+
 	m, err := migrate.NewWithDatabaseInstance(
 		migrationsPath,
 		ci.Type,
 		driver,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't create an db instance, reason: %v\n", err)
+		return nil, fmt.Errorf("couldn't create a db instance, reason: %v\n", err)
 	}
 	return m, nil
 }
@@ -50,24 +51,24 @@ func MigrateWipe(migrationsPath string, ci *services.Connection) error {
 func MigrateDatabase(version int, ci *services.Connection,
 	migrationsPath string, isUp *bool, shouldForce *bool) error {
 	m, err := createDriver(migrationsPath, ci)
+	if err != nil {
+		return err
+	}
 
 	// sets to the given version
 	if *shouldForce {
 		if version <= 0 {
 			return fmt.Errorf("%v is not a valid migration value for the force option (must be >=1)", version)
 		}
-		err = m.Force(version)
-		return err
+		return m.Force(version)
 	}
 
 	// migrate up to the highest or down to the lowest migration
 	if version == 0 {
 		if !*isUp {
-			err = m.Down()
-			return err
+			return m.Down()
 		}
-		err = m.Up()
-		return err
+		return m.Up()
 	}
 
 	if !*isUp {
@@ -75,7 +76,5 @@ func MigrateDatabase(version int, ci *services.Connection,
 	}
 
 	// increase or decrease by version value
-	err = m.Steps(version)
-	return err
-
+	return m.Steps(version)
 }

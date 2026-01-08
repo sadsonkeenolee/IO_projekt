@@ -4,6 +4,8 @@ import (
 	"flag"
 	"log"
 	"path/filepath"
+	"runtime"
+	"strings"
 
 	"os"
 
@@ -30,6 +32,7 @@ const (
 	Auth
 	Ingest
 	Search
+	Platform string = runtime.GOOS
 )
 
 var ServiceMap = map[string]uint{
@@ -39,35 +42,52 @@ var ServiceMap = map[string]uint{
 }
 
 var EnvVariables map[string]string = map[string]string{
+	"PLATFORM":     Platform,
 	"DOWNLOAD_DIR": InitPath("temp/"),
-	"MIGRATIONS":   InitJoinedPath("file:/", InitPath("api/migrations")),
+	"MIGRATIONS":   InitPath("api/migrations"),
 	"CONFIG":       InitPath("api/configs"),
 }
 
+func ConstructMigrationPath(migrationPath string) string {
+	return "file://" + migrationPath
+}
+
 func InitPath(subpath string) string {
-	fullPath, err := filepath.Abs(subpath)
-	if err != nil {
-		MainLogger.Printf("Error while parsing `%v`: %v.\n", subpath, err)
-		return ""
+	if fullPath, err := filepath.Abs(subpath); err == nil {
+		if Platform == "windows" {
+			return strings.TrimPrefix(filepath.ToSlash(fullPath), "./")
+		}
+		return fullPath
 	}
-	return fullPath
+	return ""
 }
 
 func InitJoinedPath(subpaths ...string) string {
 	if len(subpaths) <= 1 {
-		MainLogger.Printf("Got only `%v` paths.\n", len(subpaths))
-		return ""
+		return subpaths[0]
 	}
-	fullPath := filepath.Join(subpaths...)
-	if fullPath == "" {
-		MainLogger.Printf("Couldn't join your paths: `%v`.\n", subpaths)
-		return ""
+	if fullPath := filepath.Join(subpaths...); fullPath != "" {
+		if Platform == "windows" {
+			return strings.TrimPrefix(filepath.ToSlash(fullPath), "./")
+		}
+		return fullPath
 	}
-	return fullPath
+	return ""
+}
+
+func CheckIfPlatformIsSupported() bool {
+	if platform := EnvVariables["PLATFORM"]; platform == "linux" || platform == "windows" {
+		return true
+	}
+	return false
 }
 
 func main() {
 	flag.Parse()
+	if !CheckIfPlatformIsSupported() {
+		MainLogger.Println("This platform is not supported, some of the functions my not work.")
+	}
+
 	if _, ok := ServiceMap[*serviceNameFlag]; !ok {
 		MainLogger.Fatalf("`%v` is an incorrect service, flag.\n", *serviceNameFlag)
 	}
@@ -75,17 +95,23 @@ func main() {
 	// Set a correct migration file.
 	switch ServiceMap[*serviceNameFlag] {
 	case Auth:
-		EnvVariables["MIGRATIONS"] = InitJoinedPath(EnvVariables["MIGRATIONS"], "auth")
+		EnvVariables["MIGRATIONS"] = ConstructMigrationPath(InitJoinedPath(EnvVariables["MIGRATIONS"], "auth"))
 	case Ingest:
-		EnvVariables["MIGRATIONS"] = InitJoinedPath(EnvVariables["MIGRATIONS"], "ingest")
+		EnvVariables["MIGRATIONS"] = ConstructMigrationPath(InitJoinedPath(EnvVariables["MIGRATIONS"], "ingest"))
+		EnvVariables["TMDB_API_KEY"] = *apiFlag
+		EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
 	case Search:
-		EnvVariables["MIGRATIONS"] = InitJoinedPath(EnvVariables["MIGRATIONS"], "search")
+		EnvVariables["MIGRATIONS"] = ConstructMigrationPath(InitJoinedPath(EnvVariables["MIGRATIONS"], "search"))
+		EnvVariables["TMDB_API_KEY"] = *apiFlag
+		EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
 	}
-	EnvVariables["TMDB_API_KEY"] = *apiFlag
-	EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
-	// Set all variables
 	for k, v := range EnvVariables {
-		_ = os.Setenv(k, v)
+		if k == "" || v == "" {
+			MainLogger.Fatalf("Key-value (`%v`, `%v`) is not a valid pair of values.", k, v)
+		}
+		if err := os.Setenv(k, v); err != nil {
+			MainLogger.Fatalf("Key-value (`%v`, `%v`) couldn't be set as environment variables, reason: %v", k, v, err)
+		}
 	}
 
 	var s services.IService
@@ -177,6 +203,10 @@ func main() {
 	err := s.Start()
 	MainLogger.Printf("Server returned value: %v.\n", err)
 }
+
+// FIXME:
+//	1. Czasem pojawia się problem z usunięciem procedur. Na razie rozwiązanie to
+//	usunięcie procedur manualnie.
 
 // TODO:
 // - Uzupelnianie pustych rekordow
