@@ -35,7 +35,6 @@ export default function MainPanel({ category }) {
     try {
       let url = "";
       if (category === "film") url = `/api/v1/api/tv/title/${searchQuery}`;
-      // w przyszłości: serial / książka
 
       const res = await fetch(url);
       if (!res.ok) throw new Error("Brak połączenia z serwerem");

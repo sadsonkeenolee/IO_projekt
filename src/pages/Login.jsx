@@ -53,9 +53,9 @@ export default function Login() {
           <div>
             <label className="block text-sm font-medium text-white">Login lub email</label>
             <input
-              name="login"
+              name="username"
               onChange={handleChange}
-              value={form.login}
+              value={form.username}
               placeholder="janek123 lub jan@przyklad.pl"
               className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 py-2 px-3"
             />

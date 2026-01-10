@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 
 export default function Account({ token }) {
-  // początkowe dane użytkownika – na razie placeholder
   const [user, setUser] = useState({
     username: "jan",
     email: "jan@przyklad.pl",
@@ -13,13 +12,11 @@ export default function Account({ token }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  // handle input change
   function handleChange(e) {
     const { name, value } = e.target;
     setForm(prev => ({ ...prev, [name]: value }));
   }
 
-  // symulacja zapisu zmian
   async function handleSave() {
     setLoading(true);
     setMessage("");

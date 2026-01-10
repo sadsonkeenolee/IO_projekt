@@ -13,22 +13,26 @@ import Sources from "./pages/Sources";
 import Favorites from "./pages/Favorites";
 
 function App() {
+
+  const token = localStorage.getItem("token");
+  const isLoggedIn = !!token;
+
   return (
     <BrowserRouter>
       <div className="flex flex-col min-h-screen bg-slate-900 text-white">
 
-        <Header className="h-full"/>  {/* usuń mb-4 lub pb-4 */}
+        <Header className="h-full"/> 
 
         <div className="flex flex-1">
 
-          <Sidebar className="h-full" />  {/* h-full = pełna wysokość reszty ekranu */}
+          <Sidebar isLoggedIn={isLoggedIn} className="h-full" />  
 
           <main className="flex-1 p-6 overflow-auto">
             <Routes>
               <Route path="/" element={<Home />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/account" element={<Account />} />
+              <Route path="/account" element={isLoggedIn ? <Account /> : <Login />} />
               <Route path="/about" element={<About />} />
               <Route path="/sources" element={<Sources />} />
               <Route path="/favorites" element={<Favorites />} />
