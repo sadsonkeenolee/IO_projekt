@@ -136,12 +136,21 @@ def download_data():
                 zip_ref.extractall(unzipped_path)
             os.remove(zip_path)
 
+@ask_skip_prompt("pomiń proces ETL systemu `ingest`")
+def etl_ingest():
+    subprocess.run(["go", "run", MAIN_FILE,
+                    f"--service=ingest", "--api=None"])
+
+
+
+
 
 
 def main():
     make_config_files()
     make_migrations()
     download_data()
+    etl_ingest()
 
 if __name__ == "__main__":
     main()
