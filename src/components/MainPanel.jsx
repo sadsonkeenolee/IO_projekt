@@ -79,18 +79,18 @@ export default function MainPanel({ category }) {
 
       <div className="space-y-4">
         {results.map((item) => (
-          <div key={item.id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
+          <div key={item.content.id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
             <div>
-              <p className="text-white font-semibold">{item.title}</p>
-              {item.year && <p className="text-slate-400 text-sm">{item.year}</p>}
+              <p className="text-white font-semibold">{item.content.title}</p>
+              {item.year && <p className="text-slate-400 text-sm">{item.content.release_date}</p>}
             </div>
             <button
-              onClick={() => toggleLike(item.id)}
+              onClick={() => toggleLike(item.content.id)}
               className={`px-3 py-1 rounded-md font-medium ${
-                liked.includes(item.id) ? "bg-green-600 text-white" : "bg-slate-500 text-white"
+                liked.includes(item.content.id) ? "bg-green-600 text-white" : "bg-slate-500 text-white"
               }`}
             >
-              {liked.includes(item.id) ? "Lubisz to ❤️" : "Lubię 👍"}
+              {liked.includes(item.content.id) ? "Lubisz to ❤️" : "Lubię 👍"}
             </button>
           </div>
         ))}
