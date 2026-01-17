@@ -33,7 +33,7 @@ export default function MainPanel({ category }) {
 
     try {
       let url = "";
-      if (category === "film") url = `http://localhost:9997/v1/api/tv/title/${searchQuery}`;
+      if (category === "film") url = `v1/api/tv/title/${searchQuery}`;
 
       const res = await fetch(url);
       if (res.status === 404) throw new Error("Brak połączenia z serwerem");
