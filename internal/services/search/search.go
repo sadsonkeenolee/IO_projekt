@@ -76,13 +76,8 @@ func (s *SearchService) Start() error {
 		v1.GET("api/home/", s.HomePage)
 		v1.GET("api/tv/id/:identifier/", s.TvById)
 		v1.GET("api/book/id/:identifier/", s.BookById)
-		v1.GET("api/concert/id/:identifier/", func(ctx *gin.Context) { panic("Not implemented") })
-
 		v1.GET("api/tv/title/:identifier/", s.TvByTitle)
 		v1.GET("api/book/title/:identifier/", s.BookByTitle)
-		v1.GET("api/concert/title/:identifier/", func(ctx *gin.Context) { panic("Not implemented") })
-
-		v1.GET("api/", func(ctx *gin.Context) { panic("Not implemented") })
 	}
 	go func() {
 		if err := s.Router.Run(":9997"); err != nil && err != http.ErrServerClosed {
@@ -148,7 +143,7 @@ func (s *SearchService) GetDefaultShowsRecommendations() []*database.MovieSelect
 			&ms.Revenue, &ms.Runtime, &ms.Status, &ms.Tagline, &ms.AverageScore,
 			&ms.TotalScore,
 		); err != nil {
-			fmt.Println(err)
+			s.Logger.Println(err)
 			continue
 		}
 		shows = append(shows, &ms)
@@ -193,7 +188,7 @@ func (s *SearchService) TvByTitle(ctx *gin.Context) {
 	if err := s.DB.QueryRow(`call find_movie_id(?)`, uc.Content).Scan(&id); err != nil {
 		s.Logger.Printf("no id for title %v\n", uc.Content)
 		// TODO: Cachowanie do bazy danych
-		services.NewGoodContentRequest(ctx, s.FetchTvShow(uc.Content))
+		services.NewGoodContentRequest(ctx, s.FetchTvDataFromWeb(uc.Content))
 		return
 	}
 
@@ -210,11 +205,95 @@ func (s *SearchService) TvByTitle(ctx *gin.Context) {
 		services.NewBadContentRequest(ctx, "movie doesn't exist")
 		return
 	}
-
+	s.GetGenres(&ms)
+	s.GetKeywords(&ms)
+	s.GetProductionCompanies(&ms)
+	s.GetSpokenLanguages(&ms)
 	services.NewGoodContentRequest(ctx, ms)
 }
 
-func (i *SearchService) FetchTvShow(title string) map[string]any {
+func (s *SearchService) GetSpokenLanguages(mss ...*database.MovieSelectable) {
+	for _, ms := range mss {
+		rows, err := s.DB.Query(`call get_languages(?)`, ms.MovieId)
+		if err != nil {
+			s.Logger.Printf("couldn't fetch spoken languages, reason: %v\n", err)
+			return
+		}
+		// make sure the memory is allocated for the keywords
+		ms.SpokenLanguages = make([]database.LanguageEncoding, 0, 16)
+		for rows.Next() {
+			var le database.LanguageEncoding
+			var null any
+			if err := rows.Scan(&null, &le.Encoding, &le.Name); err != nil {
+				s.Logger.Printf("couldn't scan the genre, reason: %v\n", err)
+				continue
+			}
+			ms.SpokenLanguages = append(ms.SpokenLanguages, le)
+		}
+	}
+}
+
+func (s *SearchService) GetProductionCompanies(mss ...*database.MovieSelectable) {
+	for _, ms := range mss {
+		rows, err := s.DB.Query(`call get_production_companies(?)`, ms.MovieId)
+		if err != nil {
+			s.Logger.Printf("couldn't fetch companies, reason: %v\n", err)
+			return
+		}
+		// make sure the memory is allocated for the keywords
+		ms.ProductionCompanies = make([]database.ProductionCompaniesInsertable, 0, 16)
+		for rows.Next() {
+			var pci database.ProductionCompaniesInsertable
+			if err := rows.Scan(&pci.IdName.Id, &pci.IdName.Name); err != nil {
+				s.Logger.Printf("couldn't scan the genre, reason: %v\n", err)
+				continue
+			}
+			ms.ProductionCompanies = append(ms.ProductionCompanies, pci)
+		}
+	}
+}
+
+func (s *SearchService) GetKeywords(mss ...*database.MovieSelectable) {
+	for _, ms := range mss {
+		rows, err := s.DB.Query(`call get_keywords(?)`, ms.MovieId)
+		if err != nil {
+			s.Logger.Printf("couldn't fetch keywords, reason: %v\n", err)
+			return
+		}
+		// make sure the memory is allocated for the keywords
+		ms.Keywords = make([]database.Keywords, 0, 16)
+		for rows.Next() {
+			var k database.Keywords
+			if err := rows.Scan(&k.IdName.Id, &k.IdName.Name); err != nil {
+				s.Logger.Printf("couldn't scan the genre, reason: %v\n", err)
+				continue
+			}
+			ms.Keywords = append(ms.Keywords, k)
+		}
+	}
+}
+
+func (s *SearchService) GetGenres(mss ...*database.MovieSelectable) {
+	for _, ms := range mss {
+		rows, err := s.DB.Query(`call get_genres(?)`, ms.MovieId)
+		if err != nil {
+			s.Logger.Printf("couldn't fetch genres, reason: %v\n", err)
+			return
+		}
+		// make sure the memory is allocated for the genres
+		ms.Genres = make([]database.Genre, 0, 16)
+		for rows.Next() {
+			var g database.Genre
+			if err := rows.Scan(&g.IdName.Id, &g.IdName.Name); err != nil {
+				s.Logger.Printf("couldn't scan the genre, reason: %v\n", err)
+				continue
+			}
+			ms.Genres = append(ms.Genres, g)
+		}
+	}
+}
+
+func (i *SearchService) FetchTvDataFromWeb(title string) map[string]any {
 	url := utils.PrepareFetchUrl(title)
 	url = fmt.Sprintf(url, title)
 	req, _ := http.NewRequest("GET", url, nil)
@@ -250,6 +329,10 @@ func (s *SearchService) TvById(ctx *gin.Context) {
 		return
 	}
 
+	s.GetGenres(&ms)
+	s.GetKeywords(&ms)
+	s.GetProductionCompanies(&ms)
+	s.GetSpokenLanguages(&ms)
 	services.NewGoodContentRequest(ctx, ms)
 }
 

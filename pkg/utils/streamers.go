@@ -2,6 +2,7 @@ package utils
 
 import (
 	"encoding/csv"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -20,6 +21,7 @@ func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 	defer fd.Close()
 	defer close(c)
 	csvReader := csv.NewReader(fd)
+	fmt.Printf("Reading %v\n", *path)
 
 	// read until EOF
 	for {
@@ -30,7 +32,7 @@ func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 		}
 
 		if err != nil {
-			l.Printf("Error while parsing: %v", err)
+			// l.Printf("Error while parsing: %v", err)
 			continue
 		}
 

@@ -13,7 +13,7 @@ create table if not exists movies (
 	tagline varchar(128) null,
 	rating float default 0,
 	total_ratings bigint unsigned default 0,
-	
+
 	primary key (ID),
 	unique key (tmdb_id)
 )

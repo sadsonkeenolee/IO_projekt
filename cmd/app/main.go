@@ -102,7 +102,7 @@ func main() {
 			EnvVariables["TMDB_API_KEY"] = *apiFlag
 			EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
 		} else if !*migrateFlag {
-			MainLogger.Fatalf("Missing TMDB API key for ingest service. Pass --api=\"<key>\" to run the service.")
+			MainLogger.Println("Missing TMDB API key for search service. Pass --api=\"<key>\" if you want the update functionality to work.")
 		}
 	case Search:
 		EnvVariables["MIGRATIONS"] = ConstructMigrationPath(InitJoinedPath(EnvVariables["MIGRATIONS"], "search"))
@@ -110,12 +110,12 @@ func main() {
 			EnvVariables["TMDB_API_KEY"] = *apiFlag
 			EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
 		} else if !*migrateFlag {
-			MainLogger.Fatalf("Missing TMDB API key for search service. Pass --api=\"<key>\" to run the service.")
+			MainLogger.Println("Missing TMDB API key for search service. Pass --api=\"<key>\" if you want the update functionality to work.")
 		}
 	}
 	for k, v := range EnvVariables {
 		if k == "" || v == "" {
-			MainLogger.Fatalf("Key-value (`%v`, `%v`) is not a valid pair of values.", k, v)
+			MainLogger.Printf("Environment variable is missing either key or value, passed: key=`%v` and value=`%v`.", k, v)
 		}
 		if err := os.Setenv(k, v); err != nil {
 			MainLogger.Fatalf("Key-value (`%v`, `%v`) couldn't be set as environment variables, reason: %v", k, v, err)
@@ -207,6 +207,7 @@ func main() {
 		return
 	}
 
+
 	MainLogger.Printf("%v is starting...\n", s)
 	err := s.Start()
 	MainLogger.Printf("Server returned value: %v.\n", err)
@@ -215,6 +216,3 @@ func main() {
 // FIXME:
 //	1. Czasem pojawia się problem z usunięciem procedur. Na razie rozwiązanie to
 //	usunięcie procedur manualnie.
-
-// TODO:
-// - Uzupelnianie pustych rekordow

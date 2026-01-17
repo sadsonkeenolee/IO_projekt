@@ -20,7 +20,6 @@ export default function MainPanel({ category }) {
         setResults([]);
         return;
       }
-
       fetchMovies(query);
     }, 300);
 
@@ -37,10 +36,10 @@ export default function MainPanel({ category }) {
       if (category === "film") url = `http://localhost:9997/v1/api/tv/title/${searchQuery}`;
 
       const res = await fetch(url);
-      if (!res.ok) throw new Error("Brak połączenia z serwerem");
+      if (res.status === 404) throw new Error("Brak połączenia z serwerem");
 
       const data = await res.json();
-      setResults(data);
+      setResults([data]);
     } catch (err) {
       setResults([]);
       setError("Nie udało się pobrać danych z serwera.");

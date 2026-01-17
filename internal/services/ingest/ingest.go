@@ -229,6 +229,12 @@ func (i *Ingest) MoviePipeline(path1, path2 string) {
 	if err != nil {
 		i.Logger.Fatalf("Error while inserting: %v\n", err)
 	}
+
+	err = i.Load(&ip, database.InsertIntoMovie2CountriesChunked(i.DB, &i.MaxBatchSize))
+	if err != nil {
+		i.Logger.Fatalf("Error while inserting: %v\n", err)
+	}
+
 	if err = database.RebuildTable(i.DB, "movies", "InnoDB"); err != nil {
 		i.Logger.Fatalf(services.TableRebuildMessage, "movies", err)
 	}
