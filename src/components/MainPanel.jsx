@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 
 export default function MainPanel({ category }) {
   const colors = {
-    film: "bg-purple-900",
-    serial: "bg-emerald-900",
-    ksiazka: "bg-indigo-900",
+    'filmy i seriale': "bg-emerald-900",
+    'ksiazki': "bg-indigo-900",
   };
 
   const [query, setQuery] = useState("");
@@ -26,13 +25,18 @@ export default function MainPanel({ category }) {
   }, [query, category]);
 
   async function fetchMovies(searchQuery) {
+    if (category === "ksiazki") {
+      setError("Funkcjonalność wyszukiwania książek nie jest jeszcze zaimplementowana.");
+      setResults([]);
+      return;
+    }
     setLoading(true);
     setError("");
     setResults([]);
 
     try {
       let url = "";
-      if (category === "film") url = `v1/api/tv/title/${searchQuery}`;
+      if (category === "filmy i seriale") url = `v1/api/tv/title/${searchQuery}`;
 
       const res = await fetch(url);
       if (res.status === 404) throw new Error("Brak połączenia z serwerem");
@@ -90,9 +94,8 @@ export default function MainPanel({ category }) {
     <div className={`${colors[category]} shadow-xl rounded-xl p-10 max-w-4xl mx-auto transition-colors duration-500`}>
       <div className="mb-12 text-center">
         <h2 className="text-2xl font-bold mb-6">
-          {category === "film" && "Wyszukaj film, który lubisz"}
-          {category === "serial" && "Wyszukaj serial, który lubisz"}
-          {category === "ksiazka" && "Wyszukaj książkę, którą lubisz"}
+          {category === "filmy i seriale" && "Wyszukaj film lub serial, który lubisz"}
+          {category === "ksiazki" && "Wyszukaj książkę, którą lubisz"}
         </h2>
 
         <input

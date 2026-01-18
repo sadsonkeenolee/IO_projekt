@@ -5,31 +5,20 @@ export default function CategorySwitch({ category, setCategory }) {
     <div className="flex justify-center gap-4 mb-10">
 
       <button
-        onClick={() => setCategory("film")}
+        onClick={() => setCategory("filmy i seriale")}
         className={`${btnBase} ${
-          category === "film"
-            ? "bg-purple-700 ring-4 ring-white"
-            : "bg-purple-600 hover:bg-purple-700"
-        }`}
-      >
-        🎬 Filmy
-      </button>
-
-      <button
-        onClick={() => setCategory("serial")}
-        className={`${btnBase} ${
-          category === "serial"
+          category === "filmy i seriale"
             ? "bg-emerald-700 ring-4 ring-white"
             : "bg-emerald-600 hover:bg-emerald-700"
         }`}
       >
-        📺 Seriale
+        📺 Filmy i seriale
       </button>
 
       <button
-        onClick={() => setCategory("ksiazka")}
+        onClick={() => setCategory("ksiazki")}
         className={`${btnBase} ${
-          category === "ksiazka"
+          category === "ksiazki"
             ? "bg-indigo-700 ring-4 ring-white"
             : "bg-indigo-600 hover:bg-indigo-700"
         }`}
