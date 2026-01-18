@@ -35,6 +35,7 @@ export default function Login() {
       } else {
         localStorage.setItem("token", data.access_token);
         navigate("/");
+        window.location.reload();
       }
     } catch (err) {
       setError("Błąd połączenia z serwerem");

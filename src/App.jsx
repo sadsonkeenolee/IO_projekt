@@ -1,7 +1,7 @@
 import './App.css'
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import Sidebar from "./components/Sidebar";
+import Sidebar from "./components/Navbar";
 import Header from "./components/Header";
 
 import Home from "./pages/Home";
@@ -22,7 +22,7 @@ function App() {
         
         <header className="flex items-center justify-between bg-slate-800 border-b border-slate-700 px-6 py-4">
           <Header />
-          <Sidebar isLoggedIn={isLoggedIn} /> 
+          <Navbar isLoggedIn={isLoggedIn} /> 
         </header>
 
         <main className="flex-1 p-6 overflow-auto">
@@ -30,10 +30,7 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route 
-              path="/account" 
-              element={isLoggedIn ? <Account token={token} /> : <Login />} 
-            />
+            <Route path="/account" element={<Account token={token} />} />
             <Route path="/about" element={<About />} />
             <Route path="/sources" element={<Sources />} />
             <Route path="/favorites" element={<Favorites token={token} />} />

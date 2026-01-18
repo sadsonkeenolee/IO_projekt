@@ -3,11 +3,10 @@ import { useState, useEffect } from "react";
 
 export default function Favorites({ token }) {
   const [category, setCategory] = useState("film");
-  const [allLiked, setAllLiked] = useState([]); // Przechowujemy wszystko pobrane z serwera
+  const [allLiked, setAllLiked] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // 1. Pobieranie WSZYSTKICH polubionych przy wejściu na stronę
   useEffect(() => {
     async function fetchAllLiked() {
       if (!token) {
@@ -17,7 +16,6 @@ export default function Favorites({ token }) {
 
       setLoading(true);
       try {
-        // Pobieramy całą listę bez filtrowania po kategorii na backendzie (pobieramy raz)
         const res = await fetch(`http://localhost:9999/v1/users/me/liked`, {
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -25,7 +23,6 @@ export default function Favorites({ token }) {
         if (!res.ok) throw new Error("Nie udało się pobrać danych.");
 
         const data = await res.json(); 
-        // Zakładamy, że serwer zwraca tablicę obiektów, gdzie każdy ma pole 'type'
         setAllLiked(data); 
       } catch (err) {
         setError("Błąd ładowania ulubionych.");
@@ -37,10 +34,8 @@ export default function Favorites({ token }) {
     fetchAllLiked();
   }, [token]);
 
-  // 2. Filtrowanie danych lokalnie na podstawie wybranej kategorii
   const filteredItems = allLiked.filter(item => item.type === category);
 
-  // 3. Funkcja odlubienia (wysyła JSON z event: 'dislike')
   async function handleUnlike(id) {
     try {
       const response = await fetch("http://localhost:9999/v1/api/likes", {
@@ -50,12 +45,11 @@ export default function Favorites({ token }) {
           token: token,
           type: category,
           id: id,
-          event: 'dislike' // Informujemy serwer, że usuwamy
+          event: 'dislike' 
         }),
       });
 
       if (response.ok) {
-        // Usuwamy lokalnie z tablicy, żeby UI od razu się zaktualizowało
         setAllLiked(prev => prev.filter(item => item.id !== id));
       }
     } catch (err) {
