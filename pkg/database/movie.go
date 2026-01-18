@@ -1143,10 +1143,6 @@ func TmdbJoinBoth(tmdb, tmdbCredits, transformed *[]*Insertable) error {
 }
 
 func (dfm *DatasetFileMetadata) String() string {
-	if dfm.ReadAt == nil {
-		ni := ItemNotFound
-		dfm.ReadAt = &ni
-	}
 	return fmt.Sprintf(`
 		DatasetFileMetadata { 
 			Directory: %v
@@ -1154,5 +1150,5 @@ func (dfm *DatasetFileMetadata) String() string {
 			CreatedAt: %v
 			ReadAt: %v
 		}`,
-		dfm.Directory, dfm.Type, *dfm.CreatedAt, *dfm.ReadAt)
+		dfm.Directory, dfm.Type, *dfm.CreatedAt, dfm.ReadAt)
 }

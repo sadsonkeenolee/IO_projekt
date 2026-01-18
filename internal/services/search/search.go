@@ -2,9 +2,7 @@
 package search
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -17,7 +15,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
-	"github.com/sadsonkeenolee/IO_projekt/pkg/utils"
 	"github.com/spf13/viper"
 )
 
@@ -55,161 +52,6 @@ func WithDatabase(db *sql.DB) func(s *SearchService) {
 	return func(s *SearchService) {
 		s.DB = db
 	}
-}
-
-// SearchBuilder implements builder constructor for the search service.
-func SearchBuilder(opts ...func(*SearchService)) services.IService {
-	f := &SearchService{}
-	for _, opt := range opts {
-		opt(f)
-	}
-	return f
-}
-
-func (s *SearchService) Start() error {
-	if err := s.HealthCheck(); err != nil {
-		GlobalSearchLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
-	}
-	// v1 of api.
-	{
-		v1 := s.Router.Group("/v1")
-		v1.GET("api/home/", s.HomePage)
-		v1.GET("api/tv/id/:identifier/", s.TvById)
-		v1.GET("api/book/id/:identifier/", s.BookById)
-		v1.GET("api/tv/title/:identifier/", s.TvByTitle)
-		v1.GET("api/book/title/:identifier/", s.BookByTitle)
-	}
-	go func() {
-		if err := s.Router.Run(":9997"); err != nil && err != http.ErrServerClosed {
-			s.Logger.Fatalf("Router failed: %v\n", err)
-		}
-	}()
-	kill := make(chan os.Signal, 1)
-	signal.Notify(kill, syscall.SIGINT, syscall.SIGTERM)
-	sig := <-kill
-	s.Logger.Printf("Gracefully shutting down the server: %v\n.", sig)
-	s.State = services.StateDown
-	s.DB.Close()
-	return fmt.Errorf("server closed")
-}
-
-func (s *SearchService) HealthCheck() error {
-	if s.Logger == nil {
-		return fmt.Errorf("No logger setup")
-	}
-
-	if s.Router == nil {
-		return fmt.Errorf("No router setup")
-	}
-
-	if s.DB == nil {
-		return fmt.Errorf("No database setup")
-	}
-
-	if s.ConnInfo == nil {
-		return fmt.Errorf("No connection info setup")
-	}
-
-	if s.ConfigReader == nil {
-		return fmt.Errorf("No config setup")
-	}
-
-	return nil
-}
-
-func (s *SearchService) HomePage(ctx *gin.Context) {
-	shows := s.GetDefaultShowsRecommendations()
-	books := s.GetDefaultBooksRecommendations()
-	content := map[string]any{
-		"shows": shows,
-		"books": books,
-	}
-	services.NewGoodContentRequest(ctx, content)
-}
-
-func (s *SearchService) GetDefaultShowsRecommendations() []*database.MovieSelectable {
-	rows, err := s.DB.Query(`select * from default_shows_recommendation`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	shows := make([]*database.MovieSelectable, 0, 25)
-
-	for rows.Next() {
-		var ms database.MovieSelectable
-		if err := rows.Scan(
-			&ms.Id, &ms.Budget, &ms.MovieId, &ms.OriginalLanguage,
-			&ms.Title, &ms.Overview, &ms.Popularity, &ms.ReleaseDate,
-			&ms.Revenue, &ms.Runtime, &ms.Status, &ms.Tagline, &ms.AverageScore,
-			&ms.TotalScore,
-		); err != nil {
-			s.Logger.Println(err)
-			continue
-		}
-		shows = append(shows, &ms)
-	}
-	return shows
-}
-
-func (s *SearchService) GetDefaultBooksRecommendations() []*database.BookSelectable {
-	rows, err := s.DB.Query(`select * from default_books_recommendation`)
-	if err != nil {
-		return nil
-	}
-	defer rows.Close()
-	books := make([]*database.BookSelectable, 0, 25)
-
-	for rows.Next() {
-		var bs database.BookSelectable
-		if err := rows.Scan(
-			&bs.Id, &bs.Title, &bs.Isbn, &bs.Isbn13, &bs.Language,
-			&bs.Pages, &bs.ReleaseDate, &bs.Publisher, &bs.Rating, &bs.TotalRating,
-		); err != nil {
-			fmt.Println(err)
-			continue
-		}
-		books = append(books, &bs)
-	}
-	return books
-}
-
-// TvByTitle gets tv by the title
-func (s *SearchService) TvByTitle(ctx *gin.Context) {
-	var uc services.UriContent[string]
-	uc.Content = ctx.Param("identifier")
-
-	if uc.Content == "" {
-		s.Logger.Println("couldn't parse title")
-		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
-		return
-	}
-
-	var id uint64
-	if err := s.DB.QueryRow(`call find_movie_id(?)`, uc.Content).Scan(&id); err != nil {
-		s.Logger.Printf("no id for title %v\n", uc.Content)
-		// TODO: Cachowanie do bazy danych
-		services.NewGoodContentRequest(ctx, s.FetchTvDataFromWeb(uc.Content))
-		return
-	}
-
-	var ms database.MovieSelectable
-	err := s.DB.QueryRow("CALL get_movie_by_id(?)", id).Scan(
-		&ms.Id, &ms.Budget, &ms.MovieId, &ms.OriginalLanguage,
-		&ms.Title, &ms.Overview, &ms.Popularity, &ms.ReleaseDate,
-		&ms.Revenue, &ms.Runtime, &ms.Status, &ms.Tagline, &ms.AverageScore,
-		&ms.TotalScore,
-	)
-
-	if err != nil {
-		s.Logger.Printf("Lookup failed for ID %v: %v\n", id, err)
-		services.NewBadContentRequest(ctx, "movie doesn't exist")
-		return
-	}
-	s.GetGenres(&ms)
-	s.GetKeywords(&ms)
-	s.GetProductionCompanies(&ms)
-	s.GetSpokenLanguages(&ms)
-	services.NewGoodContentRequest(ctx, ms)
 }
 
 func (s *SearchService) GetSpokenLanguages(mss ...*database.MovieSelectable) {
@@ -293,20 +135,160 @@ func (s *SearchService) GetGenres(mss ...*database.MovieSelectable) {
 	}
 }
 
-func (i *SearchService) FetchTvDataFromWeb(title string) map[string]any {
-	url := utils.PrepareFetchUrl(title)
-	url = fmt.Sprintf(url, title)
-	req, _ := http.NewRequest("GET", url, nil)
-	req.Header.Add("accept", "application/json")
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %v", os.Getenv("TMDB_API_KEY")))
-	res, _ := http.DefaultClient.Do(req)
-	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
-	var reqBody map[string]any
-	if err := json.Unmarshal(body, &reqBody); err != nil {
+func (s *SearchService) GetDefaultShowsRecommendations() []*database.MovieSelectable {
+	rows, err := s.DB.Query(`select * from default_shows_recommendation`)
+	if err != nil {
 		return nil
 	}
-	return reqBody
+	defer rows.Close()
+	shows := make([]*database.MovieSelectable, 0, 25)
+
+	for rows.Next() {
+		var ms database.MovieSelectable
+		if err := rows.Scan(
+			&ms.Id, &ms.Budget, &ms.MovieId, &ms.OriginalLanguage,
+			&ms.Title, &ms.Overview, &ms.Popularity, &ms.ReleaseDate,
+			&ms.Revenue, &ms.Runtime, &ms.Status, &ms.Tagline, &ms.AverageScore,
+			&ms.TotalScore,
+		); err != nil {
+			s.Logger.Println(err)
+			continue
+		}
+		shows = append(shows, &ms)
+	}
+	return shows
+}
+
+func (s *SearchService) GetDefaultBooksRecommendations() []*database.BookSelectable {
+	rows, err := s.DB.Query(`select * from default_books_recommendation`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	books := make([]*database.BookSelectable, 0, 25)
+
+	for rows.Next() {
+		var bs database.BookSelectable
+		if err := rows.Scan(
+			&bs.Id, &bs.Title, &bs.Isbn, &bs.Isbn13, &bs.Language,
+			&bs.Pages, &bs.ReleaseDate, &bs.Publisher, &bs.Rating, &bs.TotalRating,
+		); err != nil {
+			fmt.Println(err)
+			continue
+		}
+		books = append(books, &bs)
+	}
+	return books
+}
+
+func (s *SearchService) HomePage(ctx *gin.Context) {
+	shows := s.GetDefaultShowsRecommendations()
+	books := s.GetDefaultBooksRecommendations()
+	content := map[string]any{
+		"shows": shows,
+		"books": books,
+	}
+	services.NewGoodContentRequest(ctx, content)
+}
+
+// SearchBuilder implements builder constructor for the search service.
+func SearchBuilder(opts ...func(*SearchService)) services.IService {
+	f := &SearchService{}
+	for _, opt := range opts {
+		opt(f)
+	}
+	return f
+}
+
+func (s *SearchService) Start() error {
+	if err := s.HealthCheck(); err != nil {
+		GlobalSearchLogger.Fatalf("HealthCheck failed, reason: %v\n", err)
+	}
+	// v1 of api.
+	{
+		v1 := s.Router.Group("/v1")
+		v1.GET("api/home/", s.HomePage)
+		v1.GET("api/tv/id/:identifier/", s.TvById)
+		v1.GET("api/book/id/:identifier/", s.BookById)
+		v1.GET("api/tv/title/:identifier/", s.TvByTitle)
+		v1.GET("api/book/title/:identifier/", s.BookByTitle)
+	}
+	go func() {
+		if err := s.Router.Run(":9997"); err != nil && err != http.ErrServerClosed {
+			s.Logger.Fatalf("Router failed: %v\n", err)
+		}
+	}()
+	kill := make(chan os.Signal, 1)
+	signal.Notify(kill, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-kill
+	s.Logger.Printf("Gracefully shutting down the server: %v\n.", sig)
+	s.State = services.StateDown
+	s.DB.Close()
+	return fmt.Errorf("server closed")
+}
+
+func (s *SearchService) HealthCheck() error {
+	if s.Logger == nil {
+		return fmt.Errorf("No logger setup")
+	}
+
+	if s.Router == nil {
+		return fmt.Errorf("No router setup")
+	}
+
+	if s.DB == nil {
+		return fmt.Errorf("No database setup")
+	}
+
+	if s.ConnInfo == nil {
+		return fmt.Errorf("No connection info setup")
+	}
+
+	if s.ConfigReader == nil {
+		return fmt.Errorf("No config setup")
+	}
+
+	return nil
+}
+
+// TvByTitle gets tv by the title
+func (s *SearchService) TvByTitle(ctx *gin.Context) {
+	var uc services.UriContent[string]
+	uc.Content = ctx.Param("identifier")
+
+	if uc.Content == "" {
+		s.Logger.Println("couldn't parse title")
+		services.NewBadContentRequest(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	var id uint64
+	if err := s.DB.QueryRow(`call find_movie_id(?)`, uc.Content).Scan(&id); err != nil {
+		s.Logger.Printf("no id for title %v\n", uc.Content)
+		// call Ingest and then try to select from database
+		req, _ := http.NewRequest("POST", 
+			fmt.Sprintf("http://localhost:9998/v1/api/ingest/%s", uc.Content), nil)
+		http.DefaultClient.Do(req)
+	}
+
+	var ms database.MovieSelectable
+	err := s.DB.QueryRow("CALL get_movie_by_id(?)", id).Scan(
+		&ms.Id, &ms.Budget, &ms.MovieId, &ms.OriginalLanguage,
+		&ms.Title, &ms.Overview, &ms.Popularity, &ms.ReleaseDate,
+		&ms.Revenue, &ms.Runtime, &ms.Status, &ms.Tagline, &ms.AverageScore,
+		&ms.TotalScore,
+	)
+
+	if err != nil {
+		s.Logger.Printf("Lookup failed for ID %v: %v\n", id, err)
+		services.NewBadContentRequest(ctx, "movie doesn't exist")
+		return
+	}
+	s.GetGenres(&ms)
+	s.GetKeywords(&ms)
+	s.GetProductionCompanies(&ms)
+	s.GetSpokenLanguages(&ms)
+	services.NewGoodContentRequest(ctx, ms)
 }
 
 // TvById gets tv by id

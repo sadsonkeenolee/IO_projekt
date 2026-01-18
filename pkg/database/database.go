@@ -21,7 +21,7 @@ type DatasetFileMetadata struct {
 	Directory string
 	Type      string
 	CreatedAt *string
-	ReadAt    *string
+	ReadAt    bool
 }
 
 // Table defines tables present in the database
