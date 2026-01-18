@@ -100,7 +100,8 @@ func main() {
 		EnvVariables["MIGRATIONS"] = ConstructMigrationPath(InitJoinedPath(EnvVariables["MIGRATIONS"], "ingest"))
 		if *apiFlag != "" {
 			EnvVariables["TMDB_API_KEY"] = *apiFlag
-			EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
+			EnvVariables["TMDB_FETCH_MOVIE_BASIC"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
+			EnvVariables["TMDB_FETCH_MOVIE_SPECIFIC"] = "https://api.themoviedb.org/3/tv/%v"
 		} else if !*migrateFlag {
 			MainLogger.Println("Missing TMDB API key for search service. Pass --api=\"<key>\" if you want the update functionality to work.")
 		}
@@ -108,7 +109,8 @@ func main() {
 		EnvVariables["MIGRATIONS"] = ConstructMigrationPath(InitJoinedPath(EnvVariables["MIGRATIONS"], "search"))
 		if *apiFlag != "" {
 			EnvVariables["TMDB_API_KEY"] = *apiFlag
-			EnvVariables["TMDB_FETCH_URL"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
+			EnvVariables["TMDB_FETCH_MOVIE_BASIC"] = "https://api.themoviedb.org/3/search/tv?query=%v&include_adult=true&language=en-US&page=1"
+			EnvVariables["TMDB_FETCH_MOVIE_SPECIFIC"] = "https://api.themoviedb.org/3/tv/%v"
 		} else if !*migrateFlag {
 			MainLogger.Println("Missing TMDB API key for search service. Pass --api=\"<key>\" if you want the update functionality to work.")
 		}
@@ -216,3 +218,6 @@ func main() {
 // FIXME:
 //	1. Czasem pojawia się problem z usunięciem procedur. Na razie rozwiązanie to
 //	usunięcie procedur manualnie.
+
+// TODO:
+// Dodanie testów
