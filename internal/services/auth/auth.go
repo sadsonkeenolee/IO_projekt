@@ -21,6 +21,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/mysql"
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/github"
+	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
 
@@ -87,7 +88,8 @@ func (a *AuthService) Start() error {
 		v1 := a.Router.Group("/v1")
 		v1.POST("auth/login", a.OnUserLogin)
 		v1.POST("auth/register", a.OnUserRegister)
-		// v1.POST("auth/forgot", c.OnForgotPassword)
+		v1.POST("auth/event/push", a.OnUserEventPush)
+		v1.POST("auth/event/pull", a.OnUserEventPull)
 	}
 
 	go func() {
@@ -103,6 +105,48 @@ func (a *AuthService) Start() error {
 	a.State = services.StateDown
 	a.DB.Close()
 	return fmt.Errorf("server closed")
+}
+
+func (a *AuthService) OnUserEventPush(ctx *gin.Context) {
+	var u database.UserEventPushRequest
+	if err := ctx.ShouldBindBodyWithJSON(&u); err != nil {
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		return
+	}
+	if !u.ValidateFields() {
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		return
+	}
+	if _, err := a.DB.Exec(`call push_events(?, ?, ?, ?)`,
+		u.Token, u.EventName, u.ItemType, u.ItemId); err != nil {
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		return
+	}
+	services.NewGoodContentRequest(ctx, "added")
+}
+
+func (a *AuthService) OnUserEventPull(ctx *gin.Context) {
+	var u database.UserEventPushRequest
+	if err := ctx.ShouldBindBodyWithJSON(&u); err != nil {
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	var ue database.UserEventPullResponse
+	rows, err := a.DB.Query(`call pull_events(?, ?)`, u.Token, u.EventName)
+	if err != nil {
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		return
+	}
+	for rows.Next() {
+		event := database.Event{}
+		if err := rows.Scan(&event.ItemId, &event.Name, &event.ItemType); err != nil {
+			fmt.Println(err)
+			continue
+		}
+		ue.Items = append(ue.Items, event)
+	}
+	services.NewGoodContentRequest(ctx, ue)
 }
 
 func (a *AuthService) HealthCheck() error {
