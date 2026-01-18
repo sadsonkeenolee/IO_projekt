@@ -22,7 +22,7 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/v1/auth/login", {
+      const res = await fetch("/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -33,7 +33,7 @@ export default function Login() {
       if (!res.ok) {
         setError(data.message || "Nieprawidłowe dane logowania");
       } else {
-        localStorage.setItem("token", data.token);
+        localStorage.setItem("token", data.access_token);
         navigate("/");
       }
     } catch (err) {

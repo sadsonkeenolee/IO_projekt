@@ -13,7 +13,6 @@ export default function MainPanel({ category }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // debounce dla wyszukiwania live
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (!query) {
@@ -48,11 +47,44 @@ export default function MainPanel({ category }) {
     setLoading(false);
   }
 
-  function toggleLike(id) {
+  async function toggleLike(id) {
+  const token = localStorage.getItem("token"); 
+
+  if (!token) {
+    setError("Musisz być zalogowany, aby polubić tę pozycję.");
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return; 
+  }
+
+  const type = category; 
+  
+  try {
+    const response = await fetch("v1/api/likes", { 
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        token: token,
+        type: type,
+        id: id,
+        event: 'like'
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Błąd podczas komunikacji z serwerem");
+    }
+
     setLiked((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
+
+  } catch (err) {
+    console.error("Błąd polubienia:", err);
+    alert("Nie udało się zapisać polubienia. Spróbuj ponownie.");
   }
+}
 
   return (
     <div className={`${colors[category]} shadow-xl rounded-xl p-10 max-w-4xl mx-auto transition-colors duration-500`}>

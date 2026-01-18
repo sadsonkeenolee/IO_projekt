@@ -30,10 +30,13 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/account" element={isLoggedIn ? <Account /> : <Login />} />
+            <Route 
+              path="/account" 
+              element={isLoggedIn ? <Account token={token} /> : <Login />} 
+            />
             <Route path="/about" element={<About />} />
             <Route path="/sources" element={<Sources />} />
-            <Route path="/favorites" element={<Favorites />} />
+            <Route path="/favorites" element={<Favorites token={token} />} />
           </Routes>
         </main>
 

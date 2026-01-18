@@ -4,8 +4,8 @@ import { Link } from "react-router-dom";
 export default function Register() {
   const [form, setForm] = useState({
     username: "",
-    email: "",
     password: "",
+    email: "",
     birthday: "",
     gender: "",
   });
@@ -25,7 +25,7 @@ export default function Register() {
     setSuccess("");
 
     try {
-      const res = await fetch("/api/v1/auth/register", {
+      const res = await fetch("/v1/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -37,7 +37,7 @@ export default function Register() {
         setError(data.message || "Wystąpił błąd");
       } else {
         setSuccess("Konto zostało utworzone!");
-        localStorage.setItem("token", data.token);
+        localStorage.setItem("token", data.access_token);
         navigate("/");
       }
     } catch (err) {
@@ -109,8 +109,8 @@ export default function Register() {
               className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 py-2 px-3"
             >
               <option value="">Wybierz...</option>
-              <option value="male">Mężczyzna</option>
-              <option value="female">Kobieta</option>
+              <option value="M">Mężczyzna</option>
+              <option value="F">Kobieta</option>
             </select>
           </div>
 
