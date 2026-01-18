@@ -1,6 +1,6 @@
 export default function Suggestions() {
   return (
-    <div>
+    <div className="mt-6 max-w-4xl mx-auto">
       <h2 className="text-2xl font-bold mb-6 text-center">Twoje podpowiedzi</h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-6">
