@@ -34,8 +34,9 @@ export default function Login() {
         setError(data.message || "Nieprawidłowe dane logowania");
       } else {
         localStorage.setItem("token", data.access_token);
-        navigate("/");
-        window.location.reload();
+        setTimeout(() => {
+            window.location.href = "/"; 
+        }, 100);
       }
     } catch (err) {
       setError("Błąd połączenia z serwerem");

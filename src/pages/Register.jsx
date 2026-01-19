@@ -37,9 +37,9 @@ export default function Register() {
         setError(data.message || "Wystąpił błąd");
       } else {
         setSuccess("Konto zostało utworzone!");
-        localStorage.setItem("token", data.access_token);
-        navigate("/");
-        window.location.reload();
+        setTimeout(() => {
+            window.location.href = "/"; 
+        }, 100);
       }
     } catch (err) {
       setError("Błąd połączenia z serwerem");
