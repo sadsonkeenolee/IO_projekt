@@ -243,17 +243,20 @@ func (a *AuthService) OnUserLogin(ctx *gin.Context) {
 		return
 	}
 
+	// Try to check if session exists
 	var sessionTok string
-	// TODO: Dodać sprawdzanie timestampów.
 	if err := a.DB.QueryRow(`select token from user_login_timestamps where user_id=?`, user.Id).Scan(&sessionTok); err != nil {
-		services.NewBadCredentialsCoreResponse(ctx, services.LoginFailedMessage)
-		return
+		a.Logger.Printf("Session token not found, reason: %v\n", err)
 	}
 
-	var isSessionValid bool
-	if err := a.DB.QueryRow(`select check_if_session_is_valid(?)`, sessionTok).Scan(&isSessionValid); err != nil {
-		services.NewBadCredentialsCoreResponse(ctx, services.LoginFailedMessage)
-		return
+	var isSessionValid bool = false
+	if sessionTok != "" {
+		if err := a.DB.QueryRow(`select check_if_session_is_valid(?)`, sessionTok).Scan(&isSessionValid); err != nil {
+			a.Logger.Printf("Error while checking if the session is valid, reason: %v\n", err)
+			return
+		} else {
+			isSessionValid = true
+		}
 	}
 
 	if isSessionValid {
@@ -266,6 +269,7 @@ func (a *AuthService) OnUserLogin(ctx *gin.Context) {
 		return
 	}
 
+	// Construct new token
 	if sessionTok = a.GenerateSessionToken(ulr.Username, ulr.Password); sessionTok != "" {
 		a.DB.Exec(`call create_user_session(?, ?)`, ulr.Username, sessionTok)
 		ctx.JSON(http.StatusOK, services.CredentialsCoreResponse{
