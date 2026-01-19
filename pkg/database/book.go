@@ -104,7 +104,6 @@ func (bq *BookSelectable) ConstructSelectQuery() string {
 	if !ok {
 		return ""
 	}
-	// FIXME: Change it later
 	return "call get_book_by_id(?)"
 }
 

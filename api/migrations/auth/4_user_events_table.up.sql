@@ -1,7 +1,7 @@
 create table if not exists user_events(
 	`ID` bigint unsigned auto_increment,
 	`token` varchar(512) not null,
-	`event` enum('like', 'dislike', 'playlist') not null,
+	`event` enum('like', 'dislike', 'playlist', 'unplaylist') not null,
 	`type` enum('book', 'tv', 'movie') not null,
 	`item_id` bigint unsigned not null,
 	`timestamp` timestamp default current_timestamp,

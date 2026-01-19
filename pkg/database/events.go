@@ -2,10 +2,21 @@ package database
 
 var (
 	AllowedEvents map[string]bool = map[string]bool{
-		"like": true, "dislike": true, "playlist": true,
+		"like":       true,
+		"dislike":    true,
+		"playlist":   true,
+		"unplaylist": true,
 	}
 	AllowedTypes map[string]bool = map[string]bool{
-		"book": true, "tv": true, "movie": true,
+		"book":  true,
+		"tv":    true,
+		"movie": true,
+	}
+	OppositeEvents map[string]string = map[string]string{
+		"like":       "dislike",
+		"dislike":    "like",
+		"playlist":   "unplaylist",
+		"unplaylist": "playlist",
 	}
 )
 
@@ -21,9 +32,10 @@ type UserEventPushRequest struct {
 }
 
 type Event struct {
-	ItemId   uint64 `json:"id"`
-	Name     string `json:"name"`
-	ItemType string `json:"type"`
+	ItemId    uint64 `json:"id"`
+	Name      string `json:"name"`
+	ItemType  string `json:"type"`
+	Timestamp int64  `json:"timestamp"`
 }
 
 type UserEventPullResponse struct {

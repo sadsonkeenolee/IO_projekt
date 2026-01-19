@@ -111,6 +111,7 @@ func (a *AuthService) OnUserEventPush(ctx *gin.Context) {
 	var u database.UserEventPushRequest
 	if err := ctx.ShouldBindBodyWithJSON(&u); err != nil {
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		a.Logger.Println(err)
 		return
 	}
 	if !u.ValidateFields() {
@@ -120,6 +121,7 @@ func (a *AuthService) OnUserEventPush(ctx *gin.Context) {
 	if _, err := a.DB.Exec(`call push_events(?, ?, ?, ?)`,
 		u.Token, u.EventName, u.ItemType, u.ItemId); err != nil {
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		a.Logger.Println(err)
 		return
 	}
 	services.NewGoodContentRequest(ctx, "added")
@@ -129,23 +131,61 @@ func (a *AuthService) OnUserEventPull(ctx *gin.Context) {
 	var u database.UserEventPushRequest
 	if err := ctx.ShouldBindBodyWithJSON(&u); err != nil {
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		a.Logger.Println(err)
 		return
 	}
 
 	var ue database.UserEventPullResponse
-	rows, err := a.DB.Query(`call pull_events(?, ?)`, u.Token, u.EventName)
+	eventRows, err := a.DB.Query(`call pull_events(?, ?)`, u.Token, u.EventName)
 	if err != nil {
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
-	for rows.Next() {
+
+	oppositeRows, err := a.DB.Query(`call pull_events(?, ?)`, u.Token, database.OppositeEvents[u.EventName])
+	if err != nil {
+		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
+		return
+	}
+
+	defer eventRows.Close()
+	defer oppositeRows.Close()
+
+	// Event : Name (event's name)
+	id2event := map[uint64]database.Event{}
+
+	for eventRows.Next() {
 		event := database.Event{}
-		if err := rows.Scan(&event.ItemId, &event.Name, &event.ItemType); err != nil {
-			fmt.Println(err)
+		var timestamp time.Time
+		if err := eventRows.Scan(&event.ItemId, &event.Name, &event.ItemType, &timestamp); err != nil {
 			continue
 		}
-		ue.Items = append(ue.Items, event)
+		event.Timestamp = timestamp.Unix()
+		id2event[event.ItemId] = event
 	}
+
+	for oppositeRows.Next() {
+		event := database.Event{}
+		var timestamp time.Time
+		if err := oppositeRows.Scan(&event.ItemId, &event.Name, &event.ItemType, &timestamp); err != nil {
+			continue
+		}
+
+		event.Timestamp = timestamp.Unix()
+		if item, ok := id2event[event.ItemId]; ok {
+			if item.Timestamp < event.Timestamp {
+				id2event[event.ItemId] = event
+			}
+		}
+	}
+
+	items := make([]database.Event, 0, len(id2event))
+	for _, v := range id2event {
+		if v.Name == u.EventName {
+			items = append(items, v)
+		}
+	}
+	ue.Items = items
 	services.NewGoodContentRequest(ctx, ue)
 }
 

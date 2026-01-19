@@ -209,15 +209,7 @@ func main() {
 		return
 	}
 
-
 	MainLogger.Printf("%v is starting...\n", s)
 	err := s.Start()
 	MainLogger.Printf("Server returned value: %v.\n", err)
 }
-
-// FIXME:
-//	1. Czasem pojawia się problem z usunięciem procedur. Na razie rozwiązanie to
-//	usunięcie procedur manualnie.
-
-// TODO:
-// Dodanie testów

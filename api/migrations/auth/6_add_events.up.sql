@@ -1,6 +1,6 @@
 create procedure if not exists push_events(
 in p_token varchar(512), 
-in p_event enum('like', 'dislike', 'playlist'), 
+in p_event enum('like', 'dislike', 'playlist', 'unplaylist'), 
 in p_type enum('book', 'tv', 'movie'),
 in p_item_id bigint unsigned
 )
@@ -11,9 +11,9 @@ end;
 
 create procedure if not exists pull_events(
 in p_token varchar(512),
-in p_event enum('like', 'dislike', 'playlist'))
+in p_event enum('like', 'dislike', 'playlist', 'unplaylist'))
 begin
-	select item_id, event, type 
+	select item_id, event, type, timestamp
 	from user_events
 	where (
 	token=p_token and 
