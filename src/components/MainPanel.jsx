@@ -83,7 +83,7 @@ export default function MainPanel({ category }) {
         }),
       });
 
-      if (!response.ok) {
+      if (!response.ok && response.status !== 302) {
         throw new Error("Błąd podczas komunikacji z serwerem");
       }
       setLiked((prev) =>

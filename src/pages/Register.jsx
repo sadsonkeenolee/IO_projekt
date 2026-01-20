@@ -38,7 +38,7 @@ export default function Register() {
       } else {
         setSuccess("Konto zostało utworzone!");
         setTimeout(() => {
-            window.location.href = "/"; 
+            window.location.href = "/login"; 
         }, 100);
       }
     } catch (err) {
