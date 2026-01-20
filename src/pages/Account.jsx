@@ -51,13 +51,6 @@ export default function Account({ token }) {
     setMessage("");
 
     try {
-      // fetch do backendu np.:
-      // await fetch("http://localhost:9999/v1/auth/delete", {
-      //   method: "DELETE",
-      //   headers: { Authorization: `Bearer ${token}` }
-      // });
-
-      // placeholder: wyczyszczenie danych
       setUser(null);
       setMessage("Konto zostało usunięte (placeholder).");
     } catch (err) {
@@ -83,7 +76,7 @@ export default function Account({ token }) {
             name="username"
             value={form.username}
             onChange={handleChange}
-            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600"
+            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-neutral-600"
           />
         </div>
 
@@ -94,7 +87,7 @@ export default function Account({ token }) {
             name="email"
             value={form.email}
             readOnly
-            className="w-full px-3 py-2 rounded-md bg-slate-600 border border-slate-500 cursor-not-allowed"
+            className="w-full px-3 py-2 rounded-md bg-slate-600 border border-neutral-500 cursor-not-allowed"
           />
         </div>
 
@@ -106,7 +99,7 @@ export default function Account({ token }) {
             value={form.password}
             onChange={handleChange}
             placeholder="••••••••"
-            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600"
+            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-neutral-600"
           />
         </div>
 
@@ -116,7 +109,7 @@ export default function Account({ token }) {
             name="gender"
             value={form.gender}
             onChange={handleChange}
-            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600"
+            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-neutral-600"
           >
             <option value="mężczyzna">Mężczyzna</option>
             <option value="kobieta">Kobieta</option>
@@ -131,7 +124,7 @@ export default function Account({ token }) {
             name="birthday"
             value={form.birthday}
             onChange={handleChange}
-            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-slate-600"
+            className="w-full px-3 py-2 rounded-md bg-slate-700 border border-neutral-600"
           />
         </div>
 

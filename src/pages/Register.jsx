@@ -50,7 +50,7 @@ export default function Register() {
 
   return (
     <div className="min-h-screen flex items-start justify-center pt-24 px-4">
-      <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-8 border border-slate-200">
+      <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-xl p-8 border border-neutral-200">
         <h2 className="text-2xl font-bold text-white mb-2">Załóż konto</h2>
         <p className="text-sm text-white mb-6">Szybka rejestracja.</p>
 
@@ -62,7 +62,7 @@ export default function Register() {
               onChange={handleChange}
               value={form.username}
               placeholder="Janek123"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 py-2 px-3"
+              className="mt-1 block w-full rounded-md border border-neutral-300 bg-slate-50 py-2 px-3"
             />
           </div>
 
@@ -74,7 +74,7 @@ export default function Register() {
               onChange={handleChange}
               value={form.email}
               placeholder="jan@przyklad.pl"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 py-2 px-3"
+              className="mt-1 block w-full rounded-md border border-neutral-300 bg-slate-50 py-2 px-3"
             />
           </div>
 
@@ -86,7 +86,7 @@ export default function Register() {
               onChange={handleChange}
               value={form.password}
               placeholder="••••••••"
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 py-2 px-3"
+              className="mt-1 block w-full rounded-md border border-neutral-300 bg-slate-50 py-2 px-3"
             />
           </div>
 
@@ -97,7 +97,7 @@ export default function Register() {
               type="date"
               onChange={handleChange}
               value={form.birthday}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 py-2 px-3"
+              className="mt-1 block w-full rounded-md border border-neutral-300 bg-slate-50 py-2 px-3"
             />
           </div>
 
@@ -107,7 +107,7 @@ export default function Register() {
               name="gender"
               onChange={handleChange}
               value={form.gender}
-              className="mt-1 block w-full rounded-md border border-slate-300 bg-slate-50 py-2 px-3"
+              className="mt-1 block w-full rounded-md border border-neutral-300 bg-slate-50 py-2 px-3"
             >
               <option value="">Wybierz...</option>
               <option value="M">Mężczyzna</option>

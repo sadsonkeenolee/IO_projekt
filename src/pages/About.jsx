@@ -4,7 +4,7 @@ export default function About() {
       <div className="max-w-4xl w-full">
         
         {/* Nagłówek - lekko mniejszy margines dolny */}
-        <header className="mb-8 border-b border-slate-700 pb-6">
+        <header className="mb-8 border-b border-neutral-700 pb-6">
           <h1 className="text-3xl font-bold text-white mb-3">O Algorytmie Rekomendacji 🧠</h1>
           <p className="text-lg text-slate-400 font-light">
             System łączący analizę treści z danymi o zachowaniach użytkowników.
@@ -15,7 +15,7 @@ export default function About() {
         <div className="grid gap-6">
           
           {/* Sekcja 1: Content-Based */}
-          <section className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+          <section className="bg-slate-800/50 p-6 rounded-2xl border border-neutral-700">
             <h2 className="text-2xl font-semibold text-emerald-400 mb-3 flex items-center">
               Analiza treści (Content-based)
             </h2>
@@ -25,7 +25,7 @@ export default function About() {
           </section>
 
           {/* Sekcja 2: Collaborative Filtering */}
-          <section className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+          <section className="bg-slate-800/50 p-6 rounded-2xl border border-neutral-700">
             <h2 className="text-2xl font-semibold text-indigo-400 mb-3 flex items-center">
               Filtrowanie współpracujące (Collaborative filtering)
             </h2>
@@ -35,7 +35,7 @@ export default function About() {
           </section>
 
           {/* Sekcja 3: MMR i Ranking */}
-          <section className="bg-slate-800/50 p-6 rounded-2xl border border-slate-700">
+          <section className="bg-slate-800/50 p-6 rounded-2xl border border-neutral-700">
             <h2 className="text-2xl font-semibold text-white mb-3">Ranking i Dywersyfikacja</h2>
             <p className="leading-relaxed text-slate-300">
               Wyniki obu podejść są łączone w jeden ranking. Jeżeli dla danego przedmiotu dostępny jest sygnał społeczny, ma on nieco większy wpływ na końcową ocenę. Na etapie końcowym stosowana jest dywersyfikacja przy użyciu algorytmu <strong>MMR (Maximal Marginal Relevance)</strong>, który równoważy trafność rekomendacji z ich różnorodnością.

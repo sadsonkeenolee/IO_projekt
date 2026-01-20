@@ -33,7 +33,7 @@ export default function Navbar({ isLoggedIn }) {
           </Link>
           
           {/* Logout jako przycisk, oddzielony marginesem */}
-          <div className="ml-2 pl-2 border-l border-slate-700">
+          <div className="ml-2 pl-2 border-l border-neutral-700">
              <Logout />
           </div>
         </>
@@ -49,7 +49,7 @@ export default function Navbar({ isLoggedIn }) {
           </Link>
 
           {/* Sekcja logowania przesunięta nieco w prawo */}
-          <div className="flex items-center gap-2 ml-4 pl-4 border-l border-slate-700">
+          <div className="flex items-center gap-2 ml-4 pl-4 border-l border-neutral-700">
             <Link to="/login" className={linkStyle}>
               🔐 Zaloguj
             </Link>

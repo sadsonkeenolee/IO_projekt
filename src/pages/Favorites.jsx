@@ -13,19 +13,15 @@ export default function Favorites({ token }) {
   };
 
   useEffect(() => {
-    // Controller do przerywania zapytań, jeśli użytkownik szybko zmieni kategorię
     const controller = new AbortController();
-
     async function fetchData() {
-      if (!token) return;
+      if (!token)  {
+      return;
+      }
 
       setLoading(true);
-      setError("");
-      // Czyścimy poprzednie wyniki przy zmianie kategorii, żeby nie było "migania" starej listy
-      setAllLiked([]);
-
-      try {
-        const pullRes = await fetch("/v1/auth/event/pull", {
+      setAllLiked([])
+      let resp = await fetch("/v1/auth/event/pull", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -34,59 +30,45 @@ export default function Favorites({ token }) {
             type: typeMap[category],
           }),
           signal: controller.signal
-        });
+        }).catch((err) => {console.log(err); return null;});
 
-        if (!pullRes.ok && pullRes.status !== 302) throw new Error("Błąd pobierania listy ID");
-        
-        const data = await pullRes.json();
-        
-        // Zgodnie z Twoim JSON-em: data.content.items
-        const idItems = data.content?.items || [];
 
-        if (idItems.length === 0) {
-          setAllLiked([]);
-          setLoading(false);
-          console.log("nie ma");
-          return;
-        }
-
-        // Pobieramy szczegóły dla każdego ID równolegle
-        const detailsPromises = idItems.map(async (item) => {
-            
-          console.log("🔍 Rozpoczynam search dla ID:", item.id);
-
-          try {
-            // Uwaga: używamy item.id z tablicy items
-            const detailRes = await fetch(`/v1/api/tv/id/${item.id}`);
-            if (!detailRes.ok) return null;
-            return await detailRes.json();
-          } catch (err) {
-            console.error(`Błąd detali dla ID ${item.id}:`, err);
-            return null;
-          }
-        });
-
-        const detailedResults = await Promise.all(detailsPromises);
-        setAllLiked(detailedResults.filter((res) => res !== null));
-
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-
-        // --- DODAJ TE LINIJKI ---
-        console.error("🔥 GŁÓWNY BŁĄD FETCHDATA:", err);
-        console.error("Treść błędu:", err.message);
-        // ------------------------
-
-        setError("Nie udało się załadować ulubionych.");
-      } finally {
-        setLoading(false);
+      if (!(resp?.ok || resp?.status === 302)) {
+        console.log("Zły status");
+        return;
       }
+
+      let data = await resp.json().catch((err) => {console.log(err); return null});
+      if (data === null) {
+        return;
+      }
+
+      let items = data.content.items;
+      if (!items) {
+        setAllLiked([]);
+        setLoading(false);
+        console.log("Brak polubionych rzeczy.");
+        return;
+      }
+
+      let results = []
+      for (const item of items) {
+        const details = await fetch(`/v1/api/tv/id/${item.id}`).catch((err) => {console.log(err); return null;});
+        if (!(details?.ok || details?.status===302)) {
+          continue
+        }
+        let content = await details.json().catch((err) => {console.log(err); return null;});
+        if (content) {
+          results.push(content)
+        }
+        // else {
+        //   console.log("cos pustego")
+        // }
+      }
+      setAllLiked(results);
+      setLoading(false);
     }
-
     fetchData();
-
-    // Cleanup function: przerywa fetchowanie jeśli komponent zostanie odmontowany 
-    // lub kategoria zmieni się w trakcie ładowania
     return () => controller.abort();
   }, [token, category]);
 
@@ -104,7 +86,7 @@ export default function Favorites({ token }) {
       });
 
       if (response.ok || response.status === 302) {
-        setAllLiked((prev) => prev.filter((item) => item.content.id !== id));
+        setAllLiked((prev) => prev.filter((item) => item.content.movie_id !== id));
       }
     } catch (err) {
       console.error("Błąd usuwania:", err);
@@ -126,13 +108,13 @@ export default function Favorites({ token }) {
         )}
 
         {allLiked.map((item) => (
-          <div key={item.content.id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center hover:bg-slate-600 transition-colors">
+          <div key={item.content.movie_id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center hover:bg-slate-600 transition-colors">
             <div>
               <p className="text-white font-semibold">{item.content.title}</p>
               <p className="text-slate-400 text-sm">{item.content.release_date}</p>
             </div>
             <button
-              onClick={() => handleUnlike(item.content.id)}
+              onClick={() => handleUnlike(item.content.movie_id)}
               className="px-4 py-2 rounded-md bg-red-500/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/50 transition-all text-sm font-medium"
             >
               Odlub 💔

@@ -43,6 +43,7 @@ export default function MainPanel({ category }) {
 
       const data = await res.json();
       setResults([data]);
+      console.log(data)
     } catch (err) {
       setResults([]);
       setError("Nie udało się pobrać danych z serwera.");
@@ -51,6 +52,7 @@ export default function MainPanel({ category }) {
     }
   }
 
+  // id should has the value of `movie_id` from the request
   async function toggleLike(id) {
     const token = localStorage.getItem("token");
 
@@ -107,7 +109,7 @@ export default function MainPanel({ category }) {
 
         <input
           type="text"
-          className="w-full px-4 py-3 rounded-lg bg-slate-700 border border-slate-600 focus:outline-none focus:ring focus:ring-blue-500 mb-6 text-white"
+          className="w-full px-4 py-3 rounded-lg bg-slate-700 border border-neutral-600 focus:outline-none focus:ring focus:ring-blue-500 mb-6 text-white"
           placeholder="np. Interstellar, Breaking Bad, Avatar..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -117,24 +119,24 @@ export default function MainPanel({ category }) {
         {error && <p className="text-yellow-400">{error}</p>}
       </div>
 
-      <hr className="border-slate-600 mb-12" />
+      <hr className="border-neutral-600 mb-12" />
 
       <div className="space-y-4">
         {results.map((item) => (
-          <div key={item.content.id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
+          <div key={item.content.movie_id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
             <div>
               <p className="font-semibold">{item.content.title}</p>
               <p className="text-slate-400 text-sm">{item.content.release_date}</p>
             </div>
             <button
-              onClick={() => toggleLike(item.content.id)}
+              onClick={() => toggleLike(item.content.movie_id)}
               className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                liked.includes(item.content.id)
+                liked.includes(item.content.movie_id)
                   ? "bg-rose-600 hover:bg-rose-700" // Zmieniłem na rose (czerwony) dla polubionych
                   : "bg-slate-500 hover:bg-slate-600"
               }`}
             >
-              {liked.includes(item.content.id) ? "Lubisz to ❤️" : "Lubię 👍"}
+              {liked.includes(item.content.movie_id) ? "Lubisz to ❤️" : "Lubię 👍"}
             </button>
           </div>
         ))}

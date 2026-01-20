@@ -5,7 +5,7 @@ export default function DataSources() {
       <div className="max-w-4xl w-full">
         
         {/* Nagłówek - mniejsze marginesy (mb-6 zamiast mb-8) */}
-        <header className="mb-6 border-b border-slate-700 pb-4">
+        <header className="mb-6 border-b border-neutral-700 pb-4">
           <h1 className="text-2xl font-bold text-white mb-2">Źródła Danych 📊</h1>
           <p className="text-base text-slate-400 font-light">
             Nasze modele trenujemy na publicznie dostępnych zbiorach danych.
@@ -16,7 +16,7 @@ export default function DataSources() {
         <div className="grid gap-4">
           
           {/* Sekcja 1: Książki */}
-          <section className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+          <section className="bg-slate-800/50 p-5 rounded-xl border border-neutral-700">
             <h2 className="text-xl font-semibold text-amber-400 mb-2 flex items-center">
               Książki (Goodreads) 📚
             </h2>
@@ -61,7 +61,7 @@ export default function DataSources() {
           </section>
 
           {/* Sekcja 2: Filmy */}
-          <section className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+          <section className="bg-slate-800/50 p-5 rounded-xl border border-neutral-700">
             <h2 className="text-xl font-semibold text-cyan-400 mb-2 flex items-center">
               Filmy (TMDB) 🎬
             </h2>
@@ -95,7 +95,7 @@ export default function DataSources() {
           </section>
 
           {/* Sekcja 3: Info */}
-          <section className="bg-slate-800/50 p-5 rounded-xl border border-slate-700">
+          <section className="bg-slate-800/50 p-5 rounded-xl border border-neutral-700">
             <h2 className="text-xl font-semibold text-white mb-2">Przetwarzanie danych</h2>
             <p className="text-sm leading-relaxed text-slate-300">
               Wszystkie zbiory poddano <strong>czyszczeniu i normalizacji</strong> (usuwanie duplikatów, unifikacja tytułów), aby umożliwić efektywne obliczanie podobieństwa.

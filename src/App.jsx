@@ -20,7 +20,7 @@ function App() {
     <BrowserRouter>
       <div className="flex flex-col min-h-screen bg-slate-900 text-white">
         
-        <header className="flex items-center justify-between bg-slate-800 border-b border-slate-700 px-6 py-2 shadow-md">
+        <header className="flex items-center justify-between bg-slate-800 border-b border-neutral-700 px-6 py-2 shadow-md">
           <Header />
           <Navbar isLoggedIn={isLoggedIn} /> 
         </header>
