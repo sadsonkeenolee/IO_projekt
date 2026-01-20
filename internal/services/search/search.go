@@ -135,6 +135,54 @@ func (s *SearchService) GetGenres(mss ...*database.MovieSelectable) {
 	}
 }
 
+func (s *SearchService) GetTop100Shows(ctx *gin.Context) {
+	rows, err := s.DB.Query(`select * from top_100_shows`)
+	if err != nil {
+		s.Logger.Printf("cannot query top 100 shows, reason: %v\n", err)
+		return
+	}
+	defer rows.Close()
+	shows := make([]*database.MovieSelectable, 0, 100)
+
+	for rows.Next() {
+		var ms database.MovieSelectable
+		if err := rows.Scan(
+			&ms.Id, &ms.Budget, &ms.MovieId, &ms.OriginalLanguage,
+			&ms.Title, &ms.Overview, &ms.Popularity, &ms.ReleaseDate,
+			&ms.Revenue, &ms.Runtime, &ms.Status, &ms.Tagline, &ms.AverageScore,
+			&ms.TotalScore,
+		); err != nil {
+			s.Logger.Println(err)
+			continue
+		}
+		shows = append(shows, &ms)
+	}
+	services.NewGoodContentRequest(ctx, shows)
+}
+
+func (s *SearchService) GetTop100Books(ctx *gin.Context) {
+	rows, err := s.DB.Query(`select * from top_100_books`)
+	if err != nil {
+		s.Logger.Printf("cannot query top 100 books, reason: %v\n", err)
+		return
+	}
+	defer rows.Close()
+	books := make([]*database.BookSelectable, 0, 100)
+
+	for rows.Next() {
+		var bs database.BookSelectable
+		if err := rows.Scan(
+			&bs.Id, &bs.Title, &bs.Isbn, &bs.Isbn13, &bs.Language,
+			&bs.Pages, &bs.ReleaseDate, &bs.Publisher, &bs.Rating, &bs.TotalRating,
+		); err != nil {
+			fmt.Println(err)
+			continue
+		}
+		books = append(books, &bs)
+	}
+	services.NewGoodContentRequest(ctx, books)
+}
+
 func (s *SearchService) GetDefaultShowsRecommendations() []*database.MovieSelectable {
 	rows, err := s.DB.Query(`select * from default_shows_recommendation`)
 	if err != nil {
@@ -154,6 +202,10 @@ func (s *SearchService) GetDefaultShowsRecommendations() []*database.MovieSelect
 			s.Logger.Println(err)
 			continue
 		}
+		s.GetGenres(&ms)
+		s.GetKeywords(&ms)
+		s.GetProductionCompanies(&ms)
+		s.GetSpokenLanguages(&ms)
 		shows = append(shows, &ms)
 	}
 	return shows
@@ -209,9 +261,11 @@ func (s *SearchService) Start() error {
 		v1 := s.Router.Group("/v1")
 		v1.GET("api/home/", s.HomePage)
 		v1.GET("api/tv/id/:identifier/", s.TvById)
-		v1.GET("api/book/id/:identifier/", s.BookById)
 		v1.GET("api/tv/title/:identifier/", s.TvByTitle)
+		v1.GET("api/tv/top100/", s.GetTop100Shows)
+		v1.GET("api/book/id/:identifier/", s.BookById)
 		v1.GET("api/book/title/:identifier/", s.BookByTitle)
+		v1.GET("api/book/top100/", s.GetTop100Books)
 	}
 	go func() {
 		if err := s.Router.Run(":9997"); err != nil && err != http.ErrServerClosed {
@@ -266,7 +320,7 @@ func (s *SearchService) TvByTitle(ctx *gin.Context) {
 	if err := s.DB.QueryRow(`call find_movie_id(?)`, uc.Content).Scan(&id); err != nil {
 		s.Logger.Printf("no id for title %v\n", uc.Content)
 		// call Ingest and then try to select from database
-		req, _ := http.NewRequest("POST", 
+		req, _ := http.NewRequest("POST",
 			fmt.Sprintf("http://localhost:9998/v1/api/ingest/%s", uc.Content), nil)
 		http.DefaultClient.Do(req)
 	}
