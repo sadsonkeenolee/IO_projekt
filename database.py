@@ -9,7 +9,6 @@ engine = create_engine(DATABASE_URL)
 
 def fetch_items_from_db() -> List[Dict]:
     items = []
-    # Zakładam, że kolega ma tabelę 'media_items' lub podobną
     query = text("SELECT id, type, title, genres FROM media_items")
 
     with engine.connect() as conn:
@@ -19,7 +18,7 @@ def fetch_items_from_db() -> List[Dict]:
 
             items.append({
                 "id": row.id,
-                "type": row.type,  # movie, series, book
+                "type": row.type,  
                 "title": row.title,
                 "genres": [g.strip() for g in genres_list]
             })
