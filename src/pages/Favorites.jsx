@@ -8,29 +8,29 @@ export default function Favorites({ token }) {
   const [error, setError] = useState("");
 
   const typeMap = {
-    film: "tv",
-    ksiazka: "book",
+    "filmy i seriale": "tv",
+    "ksiazki": "book",
   };
 
   useEffect(() => {
     const controller = new AbortController();
     async function fetchData() {
       if (!token)  {
-      return;
+        return;
       }
 
       setLoading(true);
       setAllLiked([])
       let resp = await fetch("/v1/auth/event/pull", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            access_token: token,
-            event: "like",
-            type: typeMap[category],
-          }),
-          signal: controller.signal
-        }).catch((err) => {console.log(err); return null;});
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          access_token: token,
+          event: "like",
+          type: typeMap[category],
+        }),
+        signal: controller.signal
+      }).catch((err) => {console.log(err); return null;});
 
 
       if (!(resp?.ok || resp?.status === 302)) {
@@ -53,7 +53,7 @@ export default function Favorites({ token }) {
 
       let results = []
       for (const item of items) {
-        const details = await fetch(`/v1/api/tv/id/${item.id}`).catch((err) => {console.log(err); return null;});
+        const details = await fetch(`/v1/api/${typeMap[category]}/id/${item.id}`).catch((err) => {console.log(err); return null;});
         if (!(details?.ok || details?.status===302)) {
           continue
         }
@@ -70,7 +70,7 @@ export default function Favorites({ token }) {
     }
     fetchData();
     return () => controller.abort();
-  }, [token, category]);
+    }, [token, category]);
 
   async function handleUnlike(id) {
     try {
@@ -102,23 +102,57 @@ export default function Favorites({ token }) {
       {loading && <p className="text-center my-4 animate-pulse">Synchronizacja z bazą...</p>}
       {error && <p className="text-red-400 text-center my-4">{error}</p>}
 
-      <div className="space-y-4 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8 mt-6">
         {!loading && allLiked.length === 0 && (
           <p className="text-center text-slate-400">Brak pozycji w tej kategorii.</p>
         )}
 
         {allLiked.map((item) => (
-          <div key={item.content.movie_id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center hover:bg-slate-600 transition-colors">
-            <div>
-              <p className="text-white font-semibold">{item.content.title}</p>
-              <p className="text-slate-400 text-sm">{item.content.release_date}</p>
+          <div 
+            key={item.content.movie_id} 
+            className="group relative h-100 bg-slate-800 rounded-2xl overflow-hidden shadow-2xl transition-all duration-500 hover:scale-[1.02]"
+          >
+            <div className="absolute inset-0 bg-gradient-to-b from-slate-700 to-slate-900 flex flex-col items-center justify-center p-6 text-center">
+              <div className="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mb-4 border border-slate-700 shadow-inner text-3xl">
+                {category === "film" ? "🎬" : "📖"}
+              </div>
+              <h3 className="text-xl font-bold text-white/80 px-4">{item.content.title}</h3>
+              <p className="text-slate-500 text-sm mt-2">
+                {item.content.release_date ? new Date(item.content.release_date).getFullYear() : 'N/A'}
+              </p>
             </div>
-            <button
-              onClick={() => handleUnlike(item.content.movie_id)}
-              className="px-4 py-2 rounded-md bg-red-500/20 hover:bg-red-600 text-red-400 hover:text-white border border-red-500/50 transition-all text-sm font-medium"
-            >
-              Odlub 💔
-            </button>
+
+            <div className="absolute inset-0 bg-slate-900/95 opacity-0 group-hover:opacity-100 transition-all duration-300 p-8 flex flex-col">
+              <div className="flex-1">
+                <div className="flex justify-between items-start">
+                  <span className="text-xs font-bold tracking-widest text-rose-500 uppercase">{typeMap[category]}</span>
+                  <div className="bg-yellow-500 text-black text-[10px] font-black px-2 py-0.5 rounded">
+                    ★ {item.content.rating || "N/A"}
+                  </div>
+                </div>
+
+                <h3 className="text-2xl font-bold text-white mt-2 leading-tight">{item.content.title}</h3>
+
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {item.content.genres?.slice(0, 3).map(g => (
+                    <span key={g.id} className="text-[10px] border border-slate-700 text-slate-400 px-2 py-1 rounded-md">
+                      {g.name}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="text-slate-400 text-sm mt-6 line-clamp-6 italic leading-relaxed">
+                  {item.content.overview || "Brak opisu dla tego tytułu."}
+                </p>
+              </div>
+
+              <button
+                onClick={() => handleUnlike(item.content.movie_id)}
+                className="mt-4 w-full py-3 rounded-xl bg-red-500/10 hover:bg-red-600 text-red-500 hover:text-white border border-red-500/20 transition-all duration-300 font-bold flex items-center justify-center gap-2"
+              >
+                <span>💔</span> Odlub
+              </button>
+            </div>
           </div>
         ))}
       </div>

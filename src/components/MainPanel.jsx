@@ -120,27 +120,68 @@ export default function MainPanel({ category }) {
       </div>
 
       <hr className="border-neutral-600 mb-12" />
-
-      <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {results.map((item) => (
-          <div key={item.content.movie_id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
-            <div>
-              <p className="font-semibold">{item.content.title}</p>
-              <p className="text-slate-400 text-sm">{item.content.release_date}</p>
+          <div 
+            key={item.content.movie_id} 
+            className="group relative h-100 bg-slate-800 rounded-xl overflow-hidden shadow-lg transition-transform duration-300 hover:-translate-y-2"
+          >
+            <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-700 to-slate-900 flex flex-col items-center justify-center text-slate-500">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+              </svg>
+              <span className="font-bold text-lg uppercase tracking-wider">{item.content.title}</span>
             </div>
-            <button
-              onClick={() => toggleLike(item.content.movie_id)}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                liked.includes(item.content.movie_id)
-                  ? "bg-rose-600 hover:bg-rose-700" // Zmieniłem na rose (czerwony) dla polubionych
-                  : "bg-slate-500 hover:bg-slate-600"
-              }`}
-            >
-              {liked.includes(item.content.movie_id) ? "Lubisz to ❤️" : "Lubię 👍"}
-            </button>
+
+            <div className="absolute inset-0 bg-slate-900/90 opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-6 flex flex-col justify-between">
+              <div>
+                <div className="flex justify-between items-start">
+                  <h3 className="text-xl font-bold text-white leading-tight">{item.content.title}</h3>
+                  <span className="bg-yellow-500 text-slate-900 text-xs font-bold px-2 py-1 rounded">
+                    ★ {item.content.rating}
+                  </span>
+                </div>
+
+                <p className="text-slate-400 text-xs mt-1">
+                  {new Date(item.content.release_date).getFullYear()} • {item.content.runtime} min
+                </p>
+
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {item.content.genres?.slice(0, 3).map(g => (
+                    <span key={g.id} className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
+                      {g.name}
+                    </span>
+                  ))}
+                </div>
+
+                <p className="text-slate-300 text-sm mt-4 line-clamp-4 italic">
+                  "{item.content.overview}"
+                </p>
+              </div>
+
+              <button
+                onClick={() => toggleLike(item.content.movie_id)}
+                className={`w-full py-2.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
+liked.includes(item.content.movie_id)
+? "bg-rose-600 hover:bg-rose-700 text-white"
+: "bg-white hover:bg-slate-200 text-slate-900"
+}`}
+              >
+                {liked.includes(item.content.movie_id) ? (
+                  <><span className="text-lg">❤️</span> Lubisz to</>
+                ) : (
+
+                    <><span className="text-lg">👍</span> Lubię</>
+                  )}
+              </button>
+            </div>
           </div>
         ))}
       </div>
+
     </div>
+
+
+
   );
 }
