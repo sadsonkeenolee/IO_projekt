@@ -10,6 +10,8 @@ import (
 	"github.com/sadsonkeenolee/IO_projekt/pkg/services"
 )
 
+// createDriver creates driver that allows for connection to the database and
+// make the migrations.
 func createDriver(migrationsPath string, ci *services.Connection) (*migrate.Migrate, error) {
 	cfg := services.ParseDriverConfig(ci)
 	url := fmt.Sprintf("%v?multiStatements=true", cfg.FormatDSN())

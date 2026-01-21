@@ -133,6 +133,7 @@ func (i *Ingest) Extract(path *string, funcs ...ExtractFunc) ([]*database.Insert
 	return extractedData, nil
 }
 
+// InsertMoviePipeline prepares the data to insert into database
 func (i *Ingest) InsertMoviePipeline(movies *[]*database.Insertable) error {
 	ip, err := database.NewInsertPipeline(movies)
 	if err != nil {

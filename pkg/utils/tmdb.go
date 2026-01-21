@@ -6,6 +6,7 @@ import (
 	"github.com/sadsonkeenolee/IO_projekt/pkg/database"
 )
 
+// TmdbTvSchema implements TMDB Api schema.
 type TmdbTvSchema struct {
 	Adult               bool                          `json:"adult"`
 	BackdropPath        string                        `json:"backdrop_path"`
@@ -30,6 +31,8 @@ type TmdbTvSchema struct {
 	VoteCount           uint64                        `json:"vote_count"`
 }
 
+// IntoMovieInsertable casts the TMDB Api response into insertable item into
+// database, in this case MovieInsertable.
 func (m *TmdbTvSchema) IntoMovieInsertable() *database.MovieInsertable {
 	parsedDate, _ := time.Parse("2006-01-02", m.ReleaseDate)
 	return &database.MovieInsertable{
@@ -56,6 +59,7 @@ func (m *TmdbTvSchema) IntoMovieInsertable() *database.MovieInsertable {
 	}
 }
 
+// mapProductionCompanies maps TMDB Api schema into an insertable item.
 func mapProductionCompanies(pcs []TmdbProductionCompanySchema) []database.ProductionCompaniesInsertable {
 	out := make([]database.ProductionCompaniesInsertable, len(pcs))
 	for i, v := range pcs {
@@ -67,6 +71,7 @@ func mapProductionCompanies(pcs []TmdbProductionCompanySchema) []database.Produc
 	return out
 }
 
+// mapProductionCountries maps TMDB Api schema into an insertable item.
 func mapProductionCountries(pcs []TmdbProductionCountrySchema) []database.CodeCountry {
 	out := make([]database.CodeCountry, len(pcs))
 	for i, v := range pcs {
@@ -78,6 +83,7 @@ func mapProductionCountries(pcs []TmdbProductionCountrySchema) []database.CodeCo
 	return out
 }
 
+// mapLanguages maps TMDB Api schema into an insertable item.
 func mapLanguages(sls []TmdbSpokenLanguageSchema) []database.LanguageEncoding {
 	out := make([]database.LanguageEncoding, len(sls))
 	for i, v := range sls {
@@ -89,6 +95,10 @@ func mapLanguages(sls []TmdbSpokenLanguageSchema) []database.LanguageEncoding {
 	return out
 }
 
+/*
+	Below we implement other TMDB Api schemas that will be mapped
+	and inserted into the database
+*/
 type TmdbCollectionSchema struct {
 	ID           int    `json:"id"`
 	Name         string `json:"name"`
