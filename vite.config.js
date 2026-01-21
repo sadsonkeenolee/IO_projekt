@@ -15,6 +15,10 @@ export default defineConfig({
         target: 'http://localhost:9999',
         changeOrigin: true,
       },
+      '/recommend': {
+        target: 'http://localhost:8001',
+        changeOrigin: true,
+      },
     }
   }
 })

@@ -25,34 +25,40 @@ export default function MainPanel({ category }) {
   }, [query, category]);
 
   async function fetchMovies(searchQuery) {
-    if (category === "ksiazki") {
-      setError("Funkcjonalność wyszukiwania książek nie jest jeszcze zaimplementowana.");
-      setResults([]);
-      return;
-    }
     setLoading(true);
     setError("");
     setResults([]);
 
     try {
       let url = "";
-      if (category === "filmy i seriale") url = `v1/api/tv/title/${searchQuery}`;
+      // Dynamiczne ustawianie endpointu w zależności od kategorii
+      if (category === "filmy i seriale") {
+        url = `/v1/api/tv/title/${searchQuery}`;
+      } else if (category === "ksiazki") {
+        url = `/v1/api/book/title/${searchQuery}`;
+      }
 
       const res = await fetch(url);
-      if (res.status === 404) throw new Error("Brak połączenia z serwerem");
+      
+      if (res.status === 404) {
+        throw new Error("Nie znaleziono pozycji o tym tytule.");
+      }
+      
+      if (!res.ok && res.status !== 302) throw new Error("Błąd połączenia z serwerem");
 
       const data = await res.json();
+      
+      // Zakładam, że struktura odpowiedzi dla książek jest podobna do TV (content.movie_id lub content.id)
       setResults([data]);
-      console.log(data)
+      console.log(data);
     } catch (err) {
       setResults([]);
-      setError("Nie udało się pobrać danych z serwera.");
+      setError(err.message || "Nie udało się pobrać danych z serwera.");
     } finally {
       setLoading(false);
     }
   }
 
-  // id should has the value of `movie_id` from the request
   async function toggleLike(id) {
     const token = localStorage.getItem("token");
 
@@ -63,7 +69,6 @@ export default function MainPanel({ category }) {
     }
 
     const isCurrentlyLiked = liked.includes(id);
-    
     const eventType = isCurrentlyLiked ? "dislike" : "like";
 
     const typeMap = {
@@ -88,16 +93,20 @@ export default function MainPanel({ category }) {
       if (!response.ok && response.status !== 302) {
         throw new Error("Błąd podczas komunikacji z serwerem");
       }
+      
       setLiked((prev) =>
         isCurrentlyLiked 
           ? prev.filter((item) => item !== id) 
-          : [...prev, id]                     
+          : [...prev, id]                   
       );
     } catch (err) {
       console.error(`Błąd podczas ${eventType}:`, err);
       alert("Nie udało się zaktualizować statusu. Spróbuj ponownie.");
     }
   }
+
+  // Helper do pobierania ID niezależnie od tego czy to film (movie_id) czy książka (id)
+  const getItemId = (item) => item.content.movie_id || item.content.id;
 
   return (
     <div className={`${colors[category]} shadow-xl rounded-xl p-10 max-w-4xl mx-auto transition-colors duration-500 text-white`}>
@@ -110,7 +119,7 @@ export default function MainPanel({ category }) {
         <input
           type="text"
           className="w-full px-4 py-3 rounded-lg bg-slate-700 border border-neutral-600 focus:outline-none focus:ring focus:ring-blue-500 mb-6 text-white"
-          placeholder="np. Interstellar, Breaking Bad, Avatar..."
+          placeholder={category === "ksiazki" ? "np. Wiedźmin, Harry Potter..." : "np. Interstellar, Breaking Bad..."}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -122,24 +131,29 @@ export default function MainPanel({ category }) {
       <hr className="border-neutral-600 mb-12" />
 
       <div className="space-y-4">
-        {results.map((item) => (
-          <div key={item.content.movie_id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
-            <div>
-              <p className="font-semibold">{item.content.title}</p>
-              <p className="text-slate-400 text-sm">{item.content.release_date}</p>
+        {results.map((item) => {
+          const id = getItemId(item);
+          return (
+            <div key={id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center">
+              <div>
+                <p className="font-semibold">{item.content.title || item.content.name}</p>
+                <p className="text-slate-400 text-sm">
+                  {item.content.release_date || item.content.published_date || "Data nieznana"}
+                </p>
+              </div>
+              <button
+                onClick={() => toggleLike(id)}
+                className={`px-4 py-2 rounded-md font-medium transition-colors ${
+                  liked.includes(id)
+                    ? "bg-rose-600 hover:bg-rose-700"
+                    : "bg-slate-500 hover:bg-slate-600"
+                }`}
+              >
+                {liked.includes(id) ? "Lubisz to ❤️" : "Lubię 👍"}
+              </button>
             </div>
-            <button
-              onClick={() => toggleLike(item.content.movie_id)}
-              className={`px-4 py-2 rounded-md font-medium transition-colors ${
-                liked.includes(item.content.movie_id)
-                  ? "bg-rose-600 hover:bg-rose-700" // Zmieniłem na rose (czerwony) dla polubionych
-                  : "bg-slate-500 hover:bg-slate-600"
-              }`}
-            >
-              {liked.includes(item.content.movie_id) ? "Lubisz to ❤️" : "Lubię 👍"}
-            </button>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
