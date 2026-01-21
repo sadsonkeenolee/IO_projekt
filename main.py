@@ -16,7 +16,6 @@ def startup_event():
         raw_items = fetch_items_from_db()
         print(f"Pobrano {len(raw_items)} elementów z bazy.")
 
-        # Wyczyść i załaduj do store
         store.items_db.clear()
         for it in raw_items:
             k = item_key(it["type"], it["id"])
@@ -28,7 +27,7 @@ def startup_event():
         raw_interactions = fetch_interactions_from_db()
         print(f"Pobrano {len(raw_interactions)} interakcji z bazy.")
 
-        store.collab.reset()  #
+        store.collab.reset()
         for inter in raw_interactions:
             k = item_key(inter["item_type"], inter["item_id"])
             if k in store.items_db:
@@ -37,9 +36,8 @@ def startup_event():
         print("Graf interakcji zbudowany. Serwis gotowy.")
 
     except Exception as e:
-        print(f"Błąd podczas łączenia z bazą: {e}")
-        print("Serwis uruchomiony w trybie pustym (oczekuje na /sync).")
-
+        print(f"Błąd DB: {e}")
+        print("Serwis działa w trybie pustym (/sync).")
 
 ItemType = Literal["movie", "book", "series"]
 _TOKEN_RE = re.compile(r"[a-ząćęłńóśżź0-9]+", re.IGNORECASE)
