@@ -5,7 +5,7 @@ from sqlalchemy import create_engine, text
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "mysql+pymysql://root:passwd@127.0.0.1:3307/recommender"
+    "mysql+pymysql://root:test@127.0.0.1:3308/data"
 )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
