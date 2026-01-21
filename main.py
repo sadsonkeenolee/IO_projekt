@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from database import fetch_items_from_db, fetch_interactions_from_db
 
-
+app = FastAPI(title="Recommender Service")
 @app.on_event("startup")
 def startup_event():
     print("Uruchamianie serwisu rekomendacji...")
@@ -39,7 +39,7 @@ def startup_event():
     except Exception as e:
         print(f"Błąd podczas łączenia z bazą: {e}")
         print("Serwis uruchomiony w trybie pustym (oczekuje na /sync).")
-app = FastAPI(title="Recommender Service")
+
 
 ItemType = Literal["movie", "book", "series"]
 _TOKEN_RE = re.compile(r"[a-ząćęłńóśżź0-9]+", re.IGNORECASE)
