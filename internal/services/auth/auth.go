@@ -141,14 +141,13 @@ func (a *AuthService) OnUserEventPull(ctx *gin.Context) {
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
+	defer eventRows.Close()
 
 	oppositeRows, err := a.DB.Query(`call pull_events(?, ?)`, u.Token, database.OppositeEvents[u.EventName])
 	if err != nil {
 		services.NewBadCredentialsCoreResponse(ctx, services.InvalidRequestMessage)
 		return
 	}
-
-	defer eventRows.Close()
 	defer oppositeRows.Close()
 
 	// Event : Name (event's name)

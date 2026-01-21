@@ -84,7 +84,6 @@ func (s *SearchService) GetProductionCompanies(mss ...*database.MovieSelectable)
 			return
 		}
 		defer rows.Close()
-		
 		// make sure the memory is allocated for the keywords
 		ms.ProductionCompanies = make([]database.ProductionCompaniesInsertable, 0, 16)
 		for rows.Next() {
@@ -106,7 +105,6 @@ func (s *SearchService) GetKeywords(mss ...*database.MovieSelectable) {
 			return
 		}
 		defer rows.Close()
-
 		// make sure the memory is allocated for the keywords
 		ms.Keywords = make([]database.Keywords, 0, 16)
 		for rows.Next() {
@@ -128,7 +126,6 @@ func (s *SearchService) GetGenres(mss ...*database.MovieSelectable) {
 			return
 		}
 		defer rows.Close()
-
 		// make sure the memory is allocated for the genres
 		ms.Genres = make([]database.Genre, 0, 16)
 		for rows.Next() {
