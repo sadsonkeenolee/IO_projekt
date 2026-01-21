@@ -138,18 +138,19 @@ function AutoScrollingSection({ title, items, type, icon }) {
                 <div>
                   <div className="flex justify-between items-start mb-2">
                     <h3 className="text-xl font-bold text-white leading-tight">{item.title}</h3>
-                    <span className="bg-yellow-500 text-slate-900 text-[10px] font-black px-2 py-1 rounded shadow-lg">
-                      ★ {item.rating || item.score}
+                    <span className="bg-yellow-500 text-slate-900 text-[10px] font-black px-4 py-1 rounded shadow-lg">
+                      ★ {`${item.rating || item.score * 2} / 10`}
                     </span>
                   </div>
 
                   <p className="text-slate-400 text-xs font-medium">
                     {item.release_date ? new Date(item.release_date).getFullYear() : '2024'} 
-                    {item.runtime ? ` • ${item.runtime} min` : ` • ${item.authors || 'Autor nieznany'}`}
+                    {item.runtime ? ` • ${item.runtime} min` : ` • ${item.publisher || 'Nieznany wydawca'}`}
                   </p>
 
                   <p className="text-slate-300 text-sm mt-6 line-clamp-6 italic leading-relaxed border-l-2 border-rose-500 pl-4">
-                    "{item.overview || "Brak opisu dla tej pozycji."}"
+                    "{item.isbn || "Brak informacji o ISBN"}"
+                    "{item.isbn13 || "Brak informacji o ISBN13"}"
                   </p>
                 </div>
 
