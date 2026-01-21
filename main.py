@@ -315,10 +315,20 @@ class SparseTfidfIndex:
             if docs.size == 0:
                 continue
             w = self.post_w[tid]
+
             idx = np.searchsorted(cand_sorted, docs)
-            m = (idx < cand_sorted.size) & (cand_sorted[idx] == docs)
+
+            valid = idx < cand_sorted.size
+            if not np.any(valid):
+                continue
+
+            idx_v = idx[valid]
+            docs_v = docs[valid]
+            w_v = w[valid]
+
+            m = cand_sorted[idx_v] == docs_v
             if np.any(m):
-                acc_sorted[idx[m]] += (float(q_w) * w[m])
+                acc_sorted[idx_v[m]] += (float(q_w) * w_v[m])
 
         acc = np.zeros(acc_sorted.size, dtype=np.float32)
         acc[sorter] = acc_sorted
