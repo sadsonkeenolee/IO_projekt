@@ -18,7 +18,7 @@ def fetch_items_from_db() -> List[Dict]:
 
             items.append({
                 "id": row.id,
-                "type": row.type,  # movie, series, book
+                "type": row.type,  
                 "title": row.title,
                 "genres": [g.strip() for g in genres_list]
             })
