@@ -6,7 +6,39 @@ from dataclasses import dataclass
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from database import fetch_items_from_db, fetch_interactions_from_db
 
+
+@app.on_event("startup")
+def startup_event():
+    print("Uruchamianie serwisu rekomendacji...")
+    try:
+        raw_items = fetch_items_from_db()
+        print(f"Pobrano {len(raw_items)} elementów z bazy.")
+
+        # Wyczyść i załaduj do store
+        store.items_db.clear()
+        for it in raw_items:
+            k = item_key(it["type"], it["id"])
+            store.items_db[k] = it
+
+        rebuild_index()
+        print("Indeks Content-Based zbudowany.")
+
+        raw_interactions = fetch_interactions_from_db()
+        print(f"Pobrano {len(raw_interactions)} interakcji z bazy.")
+
+        store.collab.reset()  #
+        for inter in raw_interactions:
+            k = item_key(inter["item_type"], inter["item_id"])
+            if k in store.items_db:
+                store.collab.add_interaction(inter["user_id"], k, inter["event"])
+
+        print("Graf interakcji zbudowany. Serwis gotowy.")
+
+    except Exception as e:
+        print(f"Błąd podczas łączenia z bazą: {e}")
+        print("Serwis uruchomiony w trybie pustym (oczekuje na /sync).")
 app = FastAPI(title="Recommender Service")
 
 ItemType = Literal["movie", "book", "series"]
