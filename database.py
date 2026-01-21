@@ -29,15 +29,16 @@ def fetch_items_from_db(limit_movies: int = 50000, limit_books: int = 50000) -> 
     """)
 
     q_books = text("""
-        SELECT
-          b.ID    AS id,
-          'book'  AS type,
-          b.title AS title,
-          ''      AS genres
-        FROM books b
-        ORDER BY b.ID
-        LIMIT :limit_books
-    """)
+                   SELECT b.ID                                                 AS id,
+                          'book'                                               AS type,
+                          b.title                                              AS title,
+                          GROUP_CONCAT(g.genre ORDER BY g.genre SEPARATOR ',') AS genres
+                   FROM books b
+                            LEFT JOIN book2genres bg ON bg.book_id = b.ID
+                            LEFT JOIN genres g ON g.ID = bg.genre_id
+                   GROUP BY b.ID, b.title
+                   ORDER BY b.ID LIMIT :limit_books
+                   """)
 
     try:
         with engine.connect() as conn:
