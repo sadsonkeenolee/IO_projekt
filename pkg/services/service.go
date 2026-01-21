@@ -27,6 +27,7 @@ const (
 	StateDown
 )
 
+// Connection structure that allows the backend to connect to databases.
 type Connection struct {
 	Type     string `mapstructure:"type"`
 	Name     string `mapstructure:"name"`

@@ -8,6 +8,8 @@ import (
 	"os"
 )
 
+// CsvStreamer streams the content of the CSV, it requires the channel that will
+// be streamed into.
 func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 	if l == nil {
 		l = log.New(os.Stderr, "", log.LstdFlags|log.Lmsgprefix)
@@ -32,7 +34,6 @@ func CsvStreamer(path *string, l *log.Logger, c chan<- []string) error {
 		}
 
 		if err != nil {
-			// l.Printf("Error while parsing: %v", err)
 			continue
 		}
 
