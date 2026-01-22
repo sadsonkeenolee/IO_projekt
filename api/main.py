@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from database import fetch_items_from_db, fetch_interactions_from_db
+from api.database import fetch_items_from_db, fetch_interactions_from_db
 
 app = FastAPI(title="Recommender Service")
 @app.on_event("startup")
