@@ -61,6 +61,7 @@ func (s *SearchService) GetSpokenLanguages(mss ...*database.MovieSelectable) {
 			s.Logger.Printf("couldn't fetch spoken languages, reason: %v\n", err)
 			return
 		}
+		defer rows.Close()
 		// make sure the memory is allocated for the keywords
 		ms.SpokenLanguages = make([]database.LanguageEncoding, 0, 16)
 		for rows.Next() {
@@ -82,6 +83,8 @@ func (s *SearchService) GetProductionCompanies(mss ...*database.MovieSelectable)
 			s.Logger.Printf("couldn't fetch companies, reason: %v\n", err)
 			return
 		}
+		defer rows.Close()
+		
 		// make sure the memory is allocated for the keywords
 		ms.ProductionCompanies = make([]database.ProductionCompaniesInsertable, 0, 16)
 		for rows.Next() {
@@ -102,6 +105,8 @@ func (s *SearchService) GetKeywords(mss ...*database.MovieSelectable) {
 			s.Logger.Printf("couldn't fetch keywords, reason: %v\n", err)
 			return
 		}
+		defer rows.Close()
+
 		// make sure the memory is allocated for the keywords
 		ms.Keywords = make([]database.Keywords, 0, 16)
 		for rows.Next() {
@@ -122,6 +127,8 @@ func (s *SearchService) GetGenres(mss ...*database.MovieSelectable) {
 			s.Logger.Printf("couldn't fetch genres, reason: %v\n", err)
 			return
 		}
+		defer rows.Close()
+
 		// make sure the memory is allocated for the genres
 		ms.Genres = make([]database.Genre, 0, 16)
 		for rows.Next() {

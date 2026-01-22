@@ -434,6 +434,10 @@ func InsertStmt(db *sql.DB, stmt *string, argFields *[]any) error {
 		return err
 	}
 
+	if err := tx.Commit(); err != nil {
+		return nil
+	}
+
 	return nil
 }
 
