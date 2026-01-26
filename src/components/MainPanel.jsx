@@ -7,7 +7,7 @@ export default function MainPanel({ category }) {
   };
 
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState([]);
+  const [result, setResult] = useState(null); // Zmienione z tablicy [] na null
   const [liked, setLiked] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -15,23 +15,22 @@ export default function MainPanel({ category }) {
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (!query) {
-        setResults([]);
+        setResult(null);
         return;
       }
-      fetchMovies(query);
-    }, 300);
+      fetchItem(query);
+    }, 500); // Zwiększyłem lekko delay, żeby nie strzelać przy szybkim pisaniu
 
     return () => clearTimeout(timeout);
   }, [query, category]);
 
-  async function fetchMovies(searchQuery) {
+  async function fetchItem(searchQuery) {
     setLoading(true);
     setError("");
-    setResults([]);
+    setResult(null);
 
     try {
       let url = "";
-      // Dynamiczne ustawianie endpointu w zależności od kategorii
       if (category === "filmy i seriale") {
         url = `/v1/api/tv/title/${searchQuery}`;
       } else if (category === "ksiazki") {
@@ -39,21 +38,19 @@ export default function MainPanel({ category }) {
       }
 
       const res = await fetch(url);
-      
+
       if (res.status === 404) {
         throw new Error("Nie znaleziono pozycji o tym tytule.");
       }
-      
-      if (!res.ok && res.status !== 302) throw new Error("Błąd połączenia z serwerem");
+
+      if (!res.ok && res.status !== 302)
+        throw new Error("Błąd połączenia z serwerem");
 
       const data = await res.json();
-      
-      // Zakładam, że struktura odpowiedzi dla książek jest podobna do TV (content.movie_id lub content.id)
-      setResults([data]);
-      console.log(data);
+      setResult(data); // Ustawiamy obiekt, nie tablicę
     } catch (err) {
-      setResults([]);
-      setError(err.message || "Nie udało się pobrać danych z serwera.");
+      setResult(null);
+      setError(err.message || "Nie udało się pobrać danych.");
     } finally {
       setLoading(false);
     }
@@ -70,152 +67,196 @@ export default function MainPanel({ category }) {
 
     const isCurrentlyLiked = liked.includes(id);
     const eventType = isCurrentlyLiked ? "dislike" : "like";
-
-    const typeMap = {
-      "filmy i seriale": "tv",
-      "ksiazki": "book",
-    };
+    const typeMap = { "filmy i seriale": "tv", ksiazki: "book" };
 
     try {
       const response = await fetch("/v1/auth/event/push", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           access_token: token,
-          event: eventType, 
+          event: eventType,
           type: typeMap[category],
           id: id.toString(),
         }),
       });
 
       if (!response.ok && response.status !== 302) {
-        throw new Error("Błąd podczas komunikacji z serwerem");
+        throw new Error("Błąd serwera");
       }
-      
+
       setLiked((prev) =>
-        isCurrentlyLiked 
-          ? prev.filter((item) => item !== id) 
-          : [...prev, id]                   
+        isCurrentlyLiked ? prev.filter((item) => item !== id) : [...prev, id]
       );
     } catch (err) {
-      console.error(`Błąd podczas ${eventType}:`, err);
-      alert("Nie udało się zaktualizować statusu. Spróbuj ponownie.");
+      console.error(err);
+      alert("Błąd aktualizacji statusu.");
     }
   }
 
-  // Helper do pobierania ID niezależnie od tego czy to film (movie_id) czy książka (id)
-  const getItemId = (item) => item.content.movie_id || item.content.id;
+  // --- RENDEROWANIE WYNIKU ---
+  const renderSingleResult = () => {
+    if (!result) return null;
 
-  return (
-    <div className={`${colors[category]} shadow-xl rounded-xl p-10 max-w-4xl mx-auto transition-colors duration-500 text-white`}>
-      <div className="mb-12 text-center">
-        <h2 className="text-2xl font-bold mb-6">
-          {category === "filmy i seriale" && "Wyszukaj film lub serial, który lubisz"}
-          {category === "ksiazki" && "Wyszukaj książkę, którą lubisz"}
-        </h2>
+    const isBook = category === "ksiazki";
+    const content = result.content;
+    const itemId = isBook ? content.id : content.movie_id;
+    const ratingValue = isBook ? content.score : content.rating;
+    
+    // Formatowanie daty
+    let year = "Rok nieznany";
+    if (content.release_date && !content.release_date.startsWith("0001")) {
+       year = new Date(content.release_date).getFullYear();
+    } else if (isBook) {
+        // Czasem książki mają rok w innym polu lub brak, tu fallback
+        year = "---";
+    }
 
-        <input
-          type="text"
-          className="w-full px-4 py-3 rounded-lg bg-slate-700 border border-neutral-600 focus:outline-none focus:ring focus:ring-blue-500 mb-6 text-white"
-          placeholder={category === "ksiazki" ? "np. Wiedźmin, Harry Potter..." : "np. Interstellar, Breaking Bad..."}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+    return (
+      <div className="animate-fade-in-up bg-slate-800/80 backdrop-blur-sm rounded-2xl overflow-hidden shadow-2xl border border-slate-700">
+        <div className="flex flex-col md:flex-row">
+          
+          {/* LEWA STRONA: IKONA / OCENA */}
+          <div className="md:w-1/3 bg-slate-900/50 p-8 flex flex-col items-center justify-center border-b md:border-b-0 md:border-r border-slate-700">
+             <div className="w-32 h-32 md:w-40 md:h-40 bg-slate-700 rounded-full flex items-center justify-center mb-6 shadow-inner text-slate-400">
+                {isBook ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+                  </svg>
+                )}
+             </div>
+             
+             {ratingValue > 0 && (
+               <div className="text-center">
+                 <div className="text-4xl font-bold text-yellow-400 mb-1">{ratingValue}</div>
+                 <div className="text-xs uppercase tracking-widest text-slate-500">Ocena</div>
+                 {isBook && content.total_rating && (
+                   <div className="text-xs text-slate-600 mt-1">({content.total_rating} głosów)</div>
+                 )}
+               </div>
+             )}
+          </div>
 
-        {loading && <p>Wczytywanie...</p>}
-        {error && <p className="text-yellow-400">{error}</p>}
-      </div>
-
-      <hr className="border-neutral-600 mb-12" />
-      <div className="space-y-4">
-        {/* {results.map((item) => { */}
-        {/*   const id = getItemId(item); */}
-        {/*   return ( */}
-        {/*     <div key={id} className="bg-slate-700 p-4 rounded-lg flex justify-between items-center"> */}
-        {/*       <div> */}
-        {/*         <p className="font-semibold">{item.content.title || item.content.name}</p> */}
-        {/*         <p className="text-slate-400 text-sm"> */}
-        {/*           {item.content.release_date || item.content.published_date || "Data nieznana"} */}
-        {/*         </p> */}
-        {/*       </div> */}
-        {/*       <button */}
-        {/*         onClick={() => toggleLike(id)} */}
-        {/*         className={`px-4 py-2 rounded-md font-medium transition-colors ${ */}
-        {/*           liked.includes(id) */}
-        {/*             ? "bg-rose-600 hover:bg-rose-700" */}
-        {/*             : "bg-slate-500 hover:bg-slate-600" */}
-        {/*         }`} */}
-        {/*       > */}
-        {/*         {liked.includes(id) ? "Lubisz to ❤️" : "Lubię 👍"} */}
-        {/*       </button> */}
-        {/*     </div> */}
-        {/*   ); */}
-        {/* })} */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {results.map((item) => (
-          <div 
-            key={item.content.movie_id} 
-            className="group relative h-100 bg-slate-800 rounded-xl overflow-hidden shadow-lg transition-transform duration-300 hover:-translate-y-2"
-          >
-            <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-slate-700 to-slate-900 flex flex-col items-center justify-center text-slate-500">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
-              </svg>
-              <span className="font-bold text-lg uppercase tracking-wider">{item.content.title}</span>
-            </div>
-
-            <div className="absolute inset-0 bg-slate-900/90 opacity-0 group-hover:opacity-100 transition-opacity duration-300 p-6 flex flex-col justify-between">
-              <div>
-                <div className="flex justify-between items-start">
-                  <h3 className="text-xl font-bold text-white leading-tight">{item.content.title}</h3>
-                  <span className="bg-yellow-500 text-slate-900 text-xs font-bold px-2 py-1 rounded">
-                    ★ {item.content.rating}
-                  </span>
-                </div>
-
-                <p className="text-slate-400 text-xs mt-1">
-                  {new Date(item.content.release_date).getFullYear()} • {item.content.runtime} min
-                </p>
-
-                <div className="flex flex-wrap gap-1 mt-3">
-                  {item.content.genres?.slice(0, 3).map(g => (
-                    <span key={g.id} className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded-full">
-                      {g.name}
-                    </span>
-                  ))}
-                </div>
-
-                <p className="text-slate-300 text-sm mt-4 line-clamp-4 italic">
-                  "{item.content.overview}"
-                </p>
+          {/* PRAWA STRONA: SZCZEGÓŁY */}
+          <div className="md:w-2/3 p-8 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-3xl font-bold text-white leading-tight">{content.title}</h2>
+                <span className="bg-slate-700 text-slate-300 px-3 py-1 rounded text-sm font-mono">
+                  {year}
+                </span>
               </div>
 
-              <button
-                onClick={() => toggleLike(item.content.movie_id)}
-                className={`w-full py-2.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 ${
-liked.includes(item.content.movie_id)
-? "bg-rose-600 hover:bg-rose-700 text-white"
-: "bg-white hover:bg-slate-200 text-slate-900"
-}`}
-              >
-                {liked.includes(item.content.movie_id) ? (
-                  <><span className="text-lg">❤️</span> Lubisz to</>
-                ) : (
+              {/* SEKCJONOWANIE DANYCH */}
+              <div className="space-y-4 mb-8">
+                
+                {/* WARIANT KSIĄŻKA */}
+                {isBook && (
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="bg-slate-700/30 p-3 rounded">
+                      <span className="block text-slate-400 text-xs mb-1">Autor</span>
+                      <span className="font-semibold">{content.authors || "Nieznany"}</span>
+                    </div>
+                    <div className="bg-slate-700/30 p-3 rounded">
+                      <span className="block text-slate-400 text-xs mb-1">Wydawca</span>
+                      <span className="font-semibold">{content.publisher || "Brak danych"}</span>
+                    </div>
+                    <div className="bg-slate-700/30 p-3 rounded">
+                      <span className="block text-slate-400 text-xs mb-1">Liczba stron</span>
+                      <span className="font-semibold">{content.pages}</span>
+                    </div>
+                    <div className="bg-slate-700/30 p-3 rounded">
+                      <span className="block text-slate-400 text-xs mb-1">ISBN</span>
+                      <span className="font-mono text-xs md:text-sm">{content.isbn || content.isbn13 || "-"}</span>
+                    </div>
+                  </div>
+                )}
 
-                    <><span className="text-lg">👍</span> Lubię</>
-                  )}
-              </button>
+                {/* WARIANT TV/FILM */}
+                {!isBook && (
+                  <>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {content.genres?.map((g) => (
+                        <span key={g.id} className="text-xs bg-indigo-600 text-white px-3 py-1 rounded-full">
+                          {g.name}
+                        </span>
+                      ))}
+                      <span className="text-xs bg-slate-700 text-slate-300 px-3 py-1 rounded-full border border-slate-600">
+                        {content.runtime} min
+                      </span>
+                    </div>
+                    <p className="text-slate-300 leading-relaxed italic border-l-4 border-indigo-500 pl-4 py-1">
+                      "{content.overview || "Brak opisu."}"
+                    </p>
+                  </>
+                )}
+              </div>
             </div>
+
+            {/* PRZYCISK AKCJI */}
+            <button
+              onClick={() => toggleLike(itemId)}
+              className={`w-full py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-3 shadow-lg ${
+                liked.includes(itemId)
+                  ? "bg-rose-600 hover:bg-rose-700 text-white shadow-rose-900/50"
+                  : "bg-white hover:bg-slate-200 text-slate-900 shadow-white/10"
+              }`}
+            >
+              {liked.includes(itemId) ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clipRule="evenodd" />
+                  </svg>
+                  <span>Dodano do ulubionych</span>
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+                  </svg>
+                  <span>Lubię to!</span>
+                </>
+              )}
+            </button>
           </div>
-        ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className={`${colors[category]} min-h-[500px] shadow-2xl rounded-3xl p-6 md:p-12 max-w-5xl mx-auto transition-colors duration-500 text-white`}>
+      <div className="max-w-2xl mx-auto text-center mb-10">
+        <h2 className="text-3xl md:text-4xl font-extrabold mb-8 tracking-tight">
+          {category === "filmy i seriale" ? "Znajdź film lub serial" : "Znajdź książkę"}
+        </h2>
+
+        <div className="relative group">
+           <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-lg blur opacity-25 group-hover:opacity-75 transition duration-1000 group-hover:duration-200"></div>
+           <input
+            type="text"
+            className="relative w-full px-6 py-4 text-lg rounded-lg bg-slate-800 border border-slate-600 focus:outline-none focus:border-indigo-500 text-white placeholder-slate-400 shadow-xl"
+            placeholder={category === "ksiazki" ? "Wpisz tytuł książki..." : "Wpisz tytuł filmu..."}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+
+        {loading && <p className="mt-4 text-slate-300 animate-pulse">Przeszukiwanie bazy...</p>}
+        {error && <p className="mt-4 text-rose-400 bg-rose-900/20 py-2 px-4 rounded-lg inline-block">{error}</p>}
       </div>
 
+      {renderSingleResult()}
+      
+      {!result && !loading && !error && (
+         <div className="text-center text-slate-400/50 mt-12">
+            <p className="text-sm uppercase tracking-widest">Brak wyników do wyświetlenia</p>
+         </div>
+      )}
     </div>
-    </div>
-
-
-
   );
 }

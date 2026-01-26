@@ -22,9 +22,6 @@ export default function Navbar({ isLoggedIn }) {
           <Link to="/favorites" className={linkStyle}>
             ❤️ Polubione
           </Link>
-          <Link to="/account" className={linkStyle}>
-            👤 Konto
-          </Link>
           <Link to="/about" className={linkStyle}>
             🧠 Algorytm
           </Link>

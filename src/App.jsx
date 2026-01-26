@@ -7,7 +7,6 @@ import Header from "./components/Header";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import Account from "./pages/Account";
 import About from "./pages/About";
 import Sources from "./pages/Sources";
 import Favorites from "./pages/Favorites";
@@ -30,7 +29,6 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/account" element={<Account token={token} />} />
             <Route path="/about" element={<About />} />
             <Route path="/sources" element={<Sources />} />
             <Route path="/favorites" element={<Favorites token={token} />} />
